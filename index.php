@@ -11,6 +11,13 @@ if (!DEBUG) {
     ini_set('display_errors', '0');
 }
 
+// ── En-têtes de sécurité HTTP (avant tout output)
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: SAMEORIGIN');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+header('Permissions-Policy: geolocation=(), camera=(), microphone=()');
+header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com");
+
 startSession();
 initDB();
 migrateDB();
@@ -603,6 +610,40 @@ footer { text-align: center; padding: 1.25rem; color: var(--muted); font-size: .
 }
 .lib-tab:hover { color: var(--text); border-color: var(--col-1); }
 .lib-tab.active { background: var(--col-1); border-color: var(--col-1); color: #fff; }
+
+/* ── BOUTON HAMBURGER ── */
+.nav-toggle {
+  display: none;
+  background: transparent; border: 1px solid var(--border);
+  border-radius: 6px; padding: .3rem .6rem; cursor: pointer;
+  font-size: 1.15rem; line-height: 1.2; color: var(--text);
+  transition: background .15s;
+}
+.nav-toggle:hover { background: var(--bg); }
+
+/* ── NAV RESPONSIVE ── */
+@media (max-width: 700px) {
+  nav { height: auto; min-height: var(--nav-h); flex-wrap: wrap; padding: 0 1rem; }
+  .nav-brand { padding: .75rem 0; }
+  .nav-toggle { display: flex; align-items: center; justify-content: center; margin-left: auto; }
+  .nav-links {
+    display: none; flex-direction: column; align-items: stretch;
+    width: 100%; padding: .4rem 0 .75rem; gap: .15rem;
+    border-top: 1px solid var(--border);
+  }
+  .nav-links.open { display: flex; }
+  .nav-links a { padding: .65rem .75rem; border-radius: 6px; font-size: .92rem; }
+  .nav-links form { padding: .35rem .75rem 0; }
+  .nav-links form button { width: 100%; justify-content: center; }
+}
+
+/* ── PAGE RESPONSIVE ── */
+@media (max-width: 600px) {
+  .page { padding: 1rem; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .modal { padding: 1.25rem; }
+  .board { gap: 1rem; }
+}
 </style>
 </head>
 <body>
@@ -619,7 +660,8 @@ HTML;
         echo <<<HTML
 <nav>
   <a class="nav-brand" href="?action=board">{$appName} <small>{$appSub}</small></a>
-  <div class="nav-links">
+  <button class="nav-toggle" aria-label="Menu" aria-expanded="false" onclick="toggleNav(this)">☰</button>
+  <div class="nav-links" id="nav-links">
     <a href="?action=board"     class="{$board}">🌿 Tableau</a>
     <a href="?action=library"   class="{$library}">📚 Prêt-o-thèque</a>
     <a href="?action=dashboard" class="{$bilan}">📊 Bilan</a>
@@ -635,6 +677,22 @@ HTML;
     </form>
   </div>
 </nav>
+<script>
+function toggleNav(btn) {
+  const nav = document.getElementById('nav-links');
+  const open = nav.classList.toggle('open');
+  btn.setAttribute('aria-expanded', open);
+  btn.textContent = open ? '✕' : '☰';
+}
+document.addEventListener('click', function(e) {
+  const nav = document.getElementById('nav-links');
+  if (nav && nav.classList.contains('open') && !e.target.closest('nav')) {
+    nav.classList.remove('open');
+    const btn = document.querySelector('.nav-toggle');
+    if (btn) { btn.setAttribute('aria-expanded','false'); btn.textContent='☰'; }
+  }
+});
+</script>
 HTML;
     }
 }

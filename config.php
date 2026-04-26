@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════
 
 // Nom et identité de l'espace
-define('APP_NAME',     'Le Panneau Vivant');
+define('APP_NAME',     'Sharehood');
 define('APP_SUBTITLE', "L'Étoile de Terre");
 
 // Chemin vers la base de données SQLite

@@ -3,7 +3,9 @@
     "allow": [
       "Bash(php -l /var/www/html/Sharehood/index.php)",
       "Bash(php -l /var/www/html/Sharehood/functions.php)",
-      "Bash(php -r ' *)"
+      "Bash(php -r ' *)",
+      "Bash(sudo tee *)",
+      "Bash(php -l /var/www/html/Sharehood/install.php)"
     ]
   }
 }

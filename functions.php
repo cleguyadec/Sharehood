@@ -51,6 +51,7 @@ function initDB(): void
             author_id    INTEGER,
             audience     TEXT    DEFAULT 'adultes',
             event_date   TEXT,
+            status       TEXT    NOT NULL DEFAULT 'idea',
             created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
             updated_at   TEXT,
             FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL
@@ -68,14 +69,21 @@ function initDB(): void
 
         -- Prêt-o-thèque
         CREATE TABLE IF NOT EXISTS library_items (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            category    TEXT    NOT NULL DEFAULT 'autre',
-            title       TEXT    NOT NULL,
-            subtitle    TEXT,
-            description TEXT,
-            owner_id    INTEGER,
-            available   INTEGER NOT NULL DEFAULT 1,
-            created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            category      TEXT    NOT NULL DEFAULT 'autre',
+            title         TEXT    NOT NULL,
+            subtitle      TEXT,
+            description   TEXT,
+            owner_id      INTEGER,
+            available     INTEGER NOT NULL DEFAULT 1,
+            condition     TEXT    NOT NULL DEFAULT 'ok',
+            url           TEXT,
+            game_duration TEXT,
+            age_min       INTEGER,
+            player_min    INTEGER,
+            player_max    INTEGER,
+            book_genre    TEXT,
+            created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
         );
 
@@ -91,6 +99,47 @@ function initDB(): void
             FOREIGN KEY (borrower_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS date_polls (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id       INTEGER NOT NULL,
+            proposed_date TEXT    NOT NULL,
+            created_by    INTEGER,
+            created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (card_id)    REFERENCES cards(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS date_poll_votes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            poll_id    INTEGER NOT NULL,
+            user_id    INTEGER NOT NULL,
+            created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(poll_id, user_id),
+            FOREIGN KEY (poll_id) REFERENCES date_polls(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id)      ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS presences (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id    INTEGER NOT NULL,
+            user_id    INTEGER NOT NULL,
+            attending  INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(card_id, user_id),
+            FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS comments (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id    INTEGER NOT NULL,
+            user_id    INTEGER NOT NULL,
+            body       TEXT    NOT NULL,
+            created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
         -- Tentatives de connexion (anti-brute force)
         CREATE TABLE IF NOT EXISTS login_attempts (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,6 +147,27 @@ function initDB(): void
             attempted_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
     ");
+}
+
+function migrateDB(): void
+{
+    $db = getDB();
+    try {
+        $db->exec("ALTER TABLE cards ADD COLUMN status TEXT NOT NULL DEFAULT 'idea'");
+        $db->exec("UPDATE cards SET status = 'planifiee'   WHERE column_id = 1 AND event_date IS NOT NULL AND status = 'idea'");
+        $db->exec("UPDATE cards SET status = 'a_planifier' WHERE column_id = 1 AND event_date IS NULL     AND status = 'idea'");
+    } catch (\PDOException) { /* colonne déjà présente */ }
+    foreach ([
+        "ALTER TABLE library_items ADD COLUMN condition     TEXT    NOT NULL DEFAULT 'ok'",
+        "ALTER TABLE library_items ADD COLUMN url           TEXT",
+        "ALTER TABLE library_items ADD COLUMN game_duration TEXT",
+        "ALTER TABLE library_items ADD COLUMN age_min       INTEGER",
+        "ALTER TABLE library_items ADD COLUMN player_min    INTEGER",
+        "ALTER TABLE library_items ADD COLUMN player_max    INTEGER",
+        "ALTER TABLE library_items ADD COLUMN book_genre    TEXT",
+    ] as $sql) {
+        try { $db->exec($sql); } catch (\PDOException) { /* colonne déjà présente */ }
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -309,17 +379,24 @@ function getCardInterests(int $cardId): array
 
 function addCard(array $user, array $data): void
 {
+    $colId     = max(0, min(2, (int) ($data['column_id'] ?? 0)));
+    $eventDate = $data['event_date'] ?: null;
+    $status    = 'idea';
+    if ($colId === 1) {
+        $status = $eventDate ? 'planifiee' : 'a_planifier';
+    }
     getDB()->prepare('
-        INSERT INTO cards (column_id, tag, title, body, author_id, audience, event_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO cards (column_id, tag, title, body, author_id, audience, event_date, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ')->execute([
-        max(0, min(2, (int) ($data['column_id'] ?? 0))),
+        $colId,
         $data['tag']      ?? 'autre',
         trim($data['title']),
         trim($data['body']  ?? ''),
         $user['id'],
         $data['audience'] ?? 'adultes',
-        $data['event_date'] ?: null,
+        $eventDate,
+        $status,
     ]);
 }
 
@@ -335,8 +412,14 @@ function moveCard(int $id, int $col, array $user): bool
     if ($card['author_id'] !== $user['id'] && $user['role'] !== 'admin') {
         return false;
     }
-    $db->prepare('UPDATE cards SET column_id = ?, updated_at = datetime("now") WHERE id = ?')
-       ->execute([max(0, min(2, $col)), $id]);
+    $newCol = max(0, min(2, $col));
+    if ($newCol === 1) {
+        $db->prepare('UPDATE cards SET column_id = ?, status = ?, updated_at = datetime("now") WHERE id = ?')
+           ->execute([$newCol, 'a_planifier', $id]);
+    } else {
+        $db->prepare('UPDATE cards SET column_id = ?, updated_at = datetime("now") WHERE id = ?')
+           ->execute([$newCol, $id]);
+    }
     return true;
 }
 
@@ -372,6 +455,214 @@ function toggleInterest(int $cardId, int $userId): bool
 }
 
 // ──────────────────────────────────────────────
+//  COMMENTAIRES
+// ──────────────────────────────────────────────
+
+function getAllComments(): array
+{
+    $stmt = getDB()->query('
+        SELECT c.*, u.display_name AS author_name
+        FROM   comments c
+        JOIN   users u ON c.user_id = u.id
+        ORDER  BY c.card_id ASC, c.created_at ASC
+    ');
+    $byCard = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $byCard[(int) $row['card_id']][] = $row;
+    }
+    return $byCard;
+}
+
+function addComment(int $cardId, int $userId, string $body): bool
+{
+    $body = trim($body);
+    if ($body === '') {
+        return false;
+    }
+    getDB()->prepare('INSERT INTO comments (card_id, user_id, body) VALUES (?, ?, ?)')
+           ->execute([$cardId, $userId, $body]);
+    return true;
+}
+
+function deleteComment(int $commentId, array $user): bool
+{
+    $db   = getDB();
+    $stmt = $db->prepare('SELECT user_id FROM comments WHERE id = ?');
+    $stmt->execute([$commentId]);
+    $c = $stmt->fetch();
+    if (!$c) {
+        return false;
+    }
+    if ($c['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        return false;
+    }
+    $db->prepare('DELETE FROM comments WHERE id = ?')->execute([$commentId]);
+    return true;
+}
+
+// ──────────────────────────────────────────────
+//  SONDAGES DE DATES
+// ──────────────────────────────────────────────
+
+function getDatePolls(int $cardId): array
+{
+    $db    = getDB();
+    $polls = $db->prepare('
+        SELECT dp.*, u.display_name AS creator_name
+        FROM   date_polls dp
+        LEFT JOIN users u ON dp.created_by = u.id
+        WHERE  dp.card_id = ?
+        ORDER  BY dp.proposed_date ASC
+    ');
+    $polls->execute([$cardId]);
+    $result = [];
+    foreach ($polls->fetchAll() as $poll) {
+        $votes = $db->prepare('
+            SELECT dpv.user_id, u.display_name
+            FROM   date_poll_votes dpv
+            JOIN   users u ON dpv.user_id = u.id
+            WHERE  dpv.poll_id = ?
+        ');
+        $votes->execute([$poll['id']]);
+        $poll['votes'] = $votes->fetchAll();
+        $result[] = $poll;
+    }
+    return $result;
+}
+
+function addDatePoll(int $cardId, string $date, int $userId): bool
+{
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        return false;
+    }
+    $db   = getDB();
+    $card = $db->prepare('SELECT id FROM cards WHERE id = ? AND column_id = 1');
+    $card->execute([$cardId]);
+    if (!$card->fetch()) {
+        return false;
+    }
+    $dup = $db->prepare('SELECT id FROM date_polls WHERE card_id = ? AND proposed_date = ?');
+    $dup->execute([$cardId, $date]);
+    if ($dup->fetch()) {
+        return false;
+    }
+    $db->prepare('INSERT INTO date_polls (card_id, proposed_date, created_by) VALUES (?, ?, ?)')
+       ->execute([$cardId, $date, $userId]);
+    return true;
+}
+
+function deleteDatePoll(int $pollId, array $user): bool
+{
+    $db   = getDB();
+    $stmt = $db->prepare('
+        SELECT dp.created_by, c.author_id
+        FROM   date_polls dp
+        JOIN   cards c ON dp.card_id = c.id
+        WHERE  dp.id = ?
+    ');
+    $stmt->execute([$pollId]);
+    $poll = $stmt->fetch();
+    if (!$poll) {
+        return false;
+    }
+    if ($poll['created_by'] != $user['id'] && $poll['author_id'] != $user['id'] && $user['role'] !== 'admin') {
+        return false;
+    }
+    $db->prepare('DELETE FROM date_polls WHERE id = ?')->execute([$pollId]);
+    return true;
+}
+
+function toggleDatePollVote(int $pollId, int $userId): bool
+{
+    $db  = getDB();
+    $chk = $db->prepare('SELECT id FROM date_poll_votes WHERE poll_id = ? AND user_id = ?');
+    $chk->execute([$pollId, $userId]);
+    if ($chk->fetch()) {
+        $db->prepare('DELETE FROM date_poll_votes WHERE poll_id = ? AND user_id = ?')->execute([$pollId, $userId]);
+        return false;
+    }
+    $db->prepare('INSERT INTO date_poll_votes (poll_id, user_id) VALUES (?, ?)')->execute([$pollId, $userId]);
+    return true;
+}
+
+function confirmCardDate(int $cardId, string $date, array $user): bool
+{
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        return false;
+    }
+    $db   = getDB();
+    $stmt = $db->prepare('SELECT author_id, column_id FROM cards WHERE id = ?');
+    $stmt->execute([$cardId]);
+    $card = $stmt->fetch();
+    if (!$card || (int) $card['column_id'] !== 1) {
+        return false;
+    }
+    if ($card['author_id'] != $user['id'] && $user['role'] !== 'admin') {
+        return false;
+    }
+    $db->prepare('UPDATE cards SET event_date = ?, status = ?, updated_at = datetime("now") WHERE id = ?')
+       ->execute([$date, 'planifiee', $cardId]);
+    return true;
+}
+
+function updateCardStatus(int $cardId, string $status, array $user): bool
+{
+    $allowed = ['a_planifier', 'planifiee', 'annulee', 'reportee'];
+    if (!in_array($status, $allowed, true)) {
+        return false;
+    }
+    $db   = getDB();
+    $stmt = $db->prepare('SELECT author_id FROM cards WHERE id = ?');
+    $stmt->execute([$cardId]);
+    $card = $stmt->fetch();
+    if (!$card) {
+        return false;
+    }
+    if ($card['author_id'] != $user['id'] && $user['role'] !== 'admin') {
+        return false;
+    }
+    $db->prepare('UPDATE cards SET status = ?, updated_at = datetime("now") WHERE id = ?')
+       ->execute([$status, $cardId]);
+    return true;
+}
+
+// ──────────────────────────────────────────────
+//  PRÉSENCES
+// ──────────────────────────────────────────────
+
+function getPresences(int $cardId): array
+{
+    $stmt = getDB()->prepare('
+        SELECT p.user_id, p.attending, u.display_name
+        FROM   presences p
+        JOIN   users u ON p.user_id = u.id
+        WHERE  p.card_id = ?
+        ORDER  BY p.attending DESC, p.created_at ASC
+    ');
+    $stmt->execute([$cardId]);
+    return $stmt->fetchAll();
+}
+
+function togglePresence(int $cardId, int $userId, int $attending): void
+{
+    $db  = getDB();
+    $chk = $db->prepare('SELECT id, attending FROM presences WHERE card_id = ? AND user_id = ?');
+    $chk->execute([$cardId, $userId]);
+    $existing = $chk->fetch();
+    if ($existing) {
+        if ((int) $existing['attending'] === $attending) {
+            $db->prepare('DELETE FROM presences WHERE card_id = ? AND user_id = ?')->execute([$cardId, $userId]);
+        } else {
+            $db->prepare('UPDATE presences SET attending = ? WHERE card_id = ? AND user_id = ?')
+               ->execute([$attending, $cardId, $userId]);
+        }
+    } else {
+        $db->prepare('INSERT INTO presences (card_id, user_id, attending) VALUES (?, ?, ?)')
+           ->execute([$cardId, $userId, $attending]);
+    }
+}
+
+// ──────────────────────────────────────────────
 //  PRÊT-O-THÈQUE
 // ──────────────────────────────────────────────
 
@@ -386,7 +677,9 @@ function getLibraryItems(?string $cat = null): array
                 (SELECT u2.display_name FROM loans l2
                  JOIN users u2 ON l2.borrower_id = u2.id
                  WHERE l2.item_id = li.id AND l2.returned_at IS NULL LIMIT 1) AS borrower_name,
-                (SELECT id FROM loans WHERE item_id = li.id AND returned_at IS NULL LIMIT 1) AS loan_id
+                (SELECT id FROM loans WHERE item_id = li.id AND returned_at IS NULL LIMIT 1) AS loan_id,
+                (SELECT loaned_at FROM loans WHERE item_id = li.id AND returned_at IS NULL LIMIT 1) AS loaned_at,
+                (SELECT COALESCE(SUM(CAST(julianday(COALESCE(returned_at, CURRENT_TIMESTAMP)) - julianday(loaned_at) AS INTEGER)), 0) FROM loans WHERE item_id = li.id) AS total_days
             FROM library_items li
             LEFT JOIN users u ON li.owner_id = u.id
             WHERE li.category = ?
@@ -401,7 +694,9 @@ function getLibraryItems(?string $cat = null): array
                 (SELECT u2.display_name FROM loans l2
                  JOIN users u2 ON l2.borrower_id = u2.id
                  WHERE l2.item_id = li.id AND l2.returned_at IS NULL LIMIT 1) AS borrower_name,
-                (SELECT id FROM loans WHERE item_id = li.id AND returned_at IS NULL LIMIT 1) AS loan_id
+                (SELECT id FROM loans WHERE item_id = li.id AND returned_at IS NULL LIMIT 1) AS loan_id,
+                (SELECT loaned_at FROM loans WHERE item_id = li.id AND returned_at IS NULL LIMIT 1) AS loaned_at,
+                (SELECT COALESCE(SUM(CAST(julianday(COALESCE(returned_at, CURRENT_TIMESTAMP)) - julianday(loaned_at) AS INTEGER)), 0) FROM loans WHERE item_id = li.id) AS total_days
             FROM library_items li
             LEFT JOIN users u ON li.owner_id = u.id
             ORDER BY li.category ASC, li.title ASC
@@ -412,15 +707,24 @@ function getLibraryItems(?string $cat = null): array
 
 function addLibraryItem(array $user, array $data): void
 {
+    $intOrNull = fn($v) => (isset($v) && is_numeric($v) && $v !== '') ? (int)$v : null;
+    $strOrNull = fn($v) => (trim($v ?? '') !== '') ? trim($v) : null;
     getDB()->prepare('
-        INSERT INTO library_items (category, title, subtitle, description, owner_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO library_items
+            (category, title, subtitle, description, owner_id, url, game_duration, age_min, player_min, player_max, book_genre)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ')->execute([
-        $data['category']    ?? 'autre',
+        $data['category']      ?? 'autre',
         trim($data['title']),
-        trim($data['subtitle']     ?? ''),
-        trim($data['description']  ?? ''),
+        $strOrNull($data['subtitle']      ?? ''),
+        $strOrNull($data['description']   ?? ''),
         $user['id'],
+        $strOrNull($data['url']           ?? ''),
+        $strOrNull($data['game_duration'] ?? ''),
+        $intOrNull($data['age_min']    ?? ''),
+        $intOrNull($data['player_min'] ?? ''),
+        $intOrNull($data['player_max'] ?? ''),
+        $strOrNull($data['book_genre'] ?? ''),
     ]);
 }
 
@@ -437,6 +741,41 @@ function deleteLibraryItem(int $id, array $user): bool
         return false;
     }
     $db->prepare('DELETE FROM library_items WHERE id = ?')->execute([$id]);
+    return true;
+}
+
+function updateLibraryItem(int $itemId, array $data, array $user): bool
+{
+    $db   = getDB();
+    $stmt = $db->prepare('SELECT owner_id FROM library_items WHERE id = ?');
+    $stmt->execute([$itemId]);
+    $item = $stmt->fetch();
+    if (!$item) {
+        return false;
+    }
+    if ($item['owner_id'] != $user['id'] && $user['role'] !== 'admin') {
+        return false;
+    }
+    $intOrNull = fn($v) => (isset($v) && is_numeric($v) && $v !== '') ? (int)$v : null;
+    $strOrNull = fn($v) => (trim($v ?? '') !== '') ? trim($v) : null;
+    $db->prepare('
+        UPDATE library_items
+        SET category = ?, title = ?, subtitle = ?, description = ?,
+            url = ?, game_duration = ?, age_min = ?, player_min = ?, player_max = ?, book_genre = ?
+        WHERE id = ?
+    ')->execute([
+        $data['category']      ?? 'autre',
+        trim($data['title']    ?? ''),
+        $strOrNull($data['subtitle']      ?? ''),
+        $strOrNull($data['description']   ?? ''),
+        $strOrNull($data['url']           ?? ''),
+        $strOrNull($data['game_duration'] ?? ''),
+        $intOrNull($data['age_min']    ?? ''),
+        $intOrNull($data['player_min'] ?? ''),
+        $intOrNull($data['player_max'] ?? ''),
+        $strOrNull($data['book_genre'] ?? ''),
+        $itemId,
+    ]);
     return true;
 }
 
@@ -468,6 +807,135 @@ function returnItem(int $loanId, array $user): bool
     $db->prepare('UPDATE loans SET returned_at = datetime("now") WHERE id = ?')->execute([$loanId]);
     $db->prepare('UPDATE library_items SET available = 1 WHERE id = ?')->execute([$loan['item_id']]);
     return true;
+}
+
+function getActiveLoans(): array
+{
+    $stmt = getDB()->query('
+        SELECT l.id, l.item_id, l.loaned_at, l.due_date,
+               li.title AS item_title, li.category,
+               u.display_name AS borrower_name,
+               CAST(julianday("now") - julianday(l.loaned_at) AS INTEGER) AS days_out
+        FROM   loans l
+        JOIN   library_items li ON l.item_id = li.id
+        JOIN   users u ON l.borrower_id = u.id
+        WHERE  l.returned_at IS NULL
+        ORDER  BY l.loaned_at ASC
+    ');
+    return $stmt->fetchAll();
+}
+
+function getTopItems(int $limit = 10): array
+{
+    $stmt = getDB()->prepare('
+        SELECT li.id, li.title, li.category,
+               COALESCE(li.condition, "ok") AS condition,
+               COUNT(l.id) AS loan_count,
+               COALESCE(SUM(CAST(julianday(COALESCE(l.returned_at, datetime("now"))) - julianday(l.loaned_at) AS INTEGER)), 0) AS total_days
+        FROM   library_items li
+        LEFT JOIN loans l ON l.item_id = li.id
+        GROUP  BY li.id
+        ORDER  BY loan_count DESC, total_days DESC
+        LIMIT  ?
+    ');
+    $stmt->execute([$limit]);
+    return $stmt->fetchAll();
+}
+
+function setItemCondition(int $itemId, string $condition, array $user): bool
+{
+    if (!in_array($condition, ['ok', 'lost', 'broken'], true)) {
+        return false;
+    }
+    $db   = getDB();
+    $stmt = $db->prepare('SELECT owner_id FROM library_items WHERE id = ?');
+    $stmt->execute([$itemId]);
+    $item = $stmt->fetch();
+    if (!$item) {
+        return false;
+    }
+    if ($item['owner_id'] != $user['id'] && $user['role'] !== 'admin') {
+        return false;
+    }
+    if ($condition !== 'ok') {
+        $db->prepare('UPDATE loans SET returned_at = datetime("now") WHERE item_id = ? AND returned_at IS NULL')
+           ->execute([$itemId]);
+        $db->prepare('UPDATE library_items SET available = 0, condition = ? WHERE id = ?')
+           ->execute([$condition, $itemId]);
+    } else {
+        $db->prepare('UPDATE library_items SET available = 1, condition = ? WHERE id = ?')
+           ->execute([$condition, $itemId]);
+    }
+    return true;
+}
+
+function getDashboardData(int $userId): array
+{
+    $db = getDB();
+
+    $lent = $db->prepare('
+        SELECT li.id, li.title, li.category,
+               u.display_name AS borrower_name,
+               l.id AS loan_id, l.loaned_at, l.due_date,
+               CAST(julianday("now") - julianday(l.loaned_at) AS INTEGER) AS days_out
+        FROM   library_items li
+        JOIN   loans l ON l.item_id = li.id AND l.returned_at IS NULL
+        JOIN   users u ON l.borrower_id = u.id
+        WHERE  li.owner_id = ?
+        ORDER  BY l.loaned_at ASC
+    ');
+    $lent->execute([$userId]);
+
+    $borrowed = $db->prepare('
+        SELECT li.id, li.title, li.category,
+               u.display_name AS owner_name,
+               l.id AS loan_id, l.loaned_at, l.due_date,
+               CAST(julianday("now") - julianday(l.loaned_at) AS INTEGER) AS days_out
+        FROM   loans l
+        JOIN   library_items li ON l.item_id = li.id
+        LEFT JOIN users u ON li.owner_id = u.id
+        WHERE  l.borrower_id = ? AND l.returned_at IS NULL
+        ORDER  BY l.loaned_at ASC
+    ');
+    $borrowed->execute([$userId]);
+
+    $activities = $db->prepare('
+        SELECT c.id, c.title, c.tag, c.status, c.event_date, c.column_id,
+               u.display_name AS author_name,
+               (SELECT COUNT(*) FROM interests WHERE card_id = c.id) AS interest_count
+        FROM   interests i
+        JOIN   cards c ON i.card_id = c.id
+        LEFT JOIN users u ON c.author_id = u.id
+        WHERE  i.user_id = ?
+        ORDER  BY c.column_id ASC, c.event_date IS NULL ASC, c.event_date ASC
+    ');
+    $activities->execute([$userId]);
+
+    $myCards = $db->prepare('
+        SELECT c.id, c.title, c.tag, c.status, c.event_date, c.column_id,
+               (SELECT COUNT(*) FROM interests WHERE card_id = c.id) AS interest_count
+        FROM   cards c
+        WHERE  c.author_id = ?
+        ORDER  BY c.column_id ASC, c.created_at DESC
+    ');
+    $myCards->execute([$userId]);
+
+    $presences = $db->prepare('
+        SELECT c.id, c.title, c.tag, c.event_date, p.attending
+        FROM   presences p
+        JOIN   cards c ON p.card_id = c.id
+        WHERE  p.user_id = ? AND c.status = "planifiee"
+        ORDER  BY c.event_date IS NULL ASC, c.event_date ASC
+    ');
+    $presences->execute([$userId]);
+
+    return [
+        'lent'       => $lent->fetchAll(),
+        'borrowed'   => $borrowed->fetchAll(),
+        'activities' => $activities->fetchAll(),
+        'my_cards'   => $myCards->fetchAll(),
+        'presences'  => $presences->fetchAll(),
+    ];
 }
 
 // ──────────────────────────────────────────────
@@ -526,11 +994,30 @@ function getUserData(int $id): array
     ');
     $loans->execute([$id]);
 
+    $pollVotes = $db->prepare('
+        SELECT dpv.poll_id, dp.proposed_date, c.title AS card_title, dpv.created_at
+        FROM   date_poll_votes dpv
+        JOIN   date_polls dp ON dpv.poll_id = dp.id
+        JOIN   cards c ON dp.card_id = c.id
+        WHERE  dpv.user_id = ?
+    ');
+    $pollVotes->execute([$id]);
+
+    $pres = $db->prepare('
+        SELECT p.card_id, c.title AS card_title, p.attending, p.created_at
+        FROM   presences p
+        JOIN   cards c ON p.card_id = c.id
+        WHERE  p.user_id = ?
+    ');
+    $pres->execute([$id]);
+
     return [
-        'profile'   => $profile->fetch(),
-        'cards'     => $cards->fetchAll(),
-        'interests' => $ints->fetchAll(),
-        'loans'     => $loans->fetchAll(),
+        'profile'         => $profile->fetch(),
+        'cards'           => $cards->fetchAll(),
+        'interests'       => $ints->fetchAll(),
+        'date_poll_votes' => $pollVotes->fetchAll(),
+        'presences'       => $pres->fetchAll(),
+        'loans'           => $loans->fetchAll(),
     ];
 }
 
@@ -582,6 +1069,20 @@ function fmtDate(?string $d): string
 // ──────────────────────────────────────────────
 //  CONSTANTES D'AFFICHAGE
 // ──────────────────────────────────────────────
+
+const STATUS_META = [
+    'idea'        => ['label' => 'Idée'],
+    'a_planifier' => ['label' => 'À planifier'],
+    'planifiee'   => ['label' => 'Planifiée'],
+    'annulee'     => ['label' => 'Annulée'],
+    'reportee'    => ['label' => 'Reportée'],
+];
+
+const CONDITION_META = [
+    'ok'     => ['label' => 'OK',    'cls' => 'cond-ok'],
+    'lost'   => ['label' => 'Perdu', 'cls' => 'cond-lost'],
+    'broken' => ['label' => 'Cassé', 'cls' => 'cond-broken'],
+];
 
 const TAG_META = [
     'savoir'  => ['emoji' => '🎁', 'label' => 'Savoir-faire', 'cls' => 'tag-savoir'],

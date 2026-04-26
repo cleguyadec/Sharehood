@@ -13,6 +13,7 @@ if (!DEBUG) {
 
 startSession();
 initDB();
+migrateDB();
 
 $action = preg_replace('/[^a-z_]/', '', $_GET['action'] ?? 'board');
 $user   = currentUser();
@@ -82,6 +83,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $user = requireAuth();
             toggleInterest((int)($_POST['card_id'] ?? 0), $user['id']);
             redirect('?action=board');
+
+        case 'date_poll_add':
+            $user = requireAuth();
+            if (!addDatePoll((int)($_POST['card_id'] ?? 0), trim($_POST['proposed_date'] ?? ''), $user['id'])) {
+                flash('error', 'Date invalide ou déjà proposée.');
+            }
+            redirect('?action=board');
+
+        case 'date_poll_delete':
+            $user = requireAuth();
+            deleteDatePoll((int)($_POST['poll_id'] ?? 0), $user);
+            redirect('?action=board');
+
+        case 'date_poll_vote':
+            $user = requireAuth();
+            toggleDatePollVote((int)($_POST['poll_id'] ?? 0), $user['id']);
+            redirect('?action=board');
+
+        case 'card_confirm_date':
+            $user = requireAuth();
+            if (!confirmCardDate((int)($_POST['card_id'] ?? 0), trim($_POST['event_date'] ?? ''), $user)) {
+                flash('error', 'Impossible de confirmer la date.');
+            } else {
+                flash('success', 'Date confirmée ! Les membres peuvent confirmer leur présence.');
+            }
+            redirect('?action=board');
+
+        case 'card_status_update':
+            $user = requireAuth();
+            updateCardStatus((int)($_POST['card_id'] ?? 0), trim($_POST['status'] ?? ''), $user);
+            redirect('?action=board');
+
+        case 'presence_toggle':
+            $user = requireAuth();
+            togglePresence((int)($_POST['card_id'] ?? 0), $user['id'], (int)($_POST['attending'] ?? 1));
+            redirect('?action=board');
+
+        case 'comment_add':
+            $user = requireAuth();
+            if (!addComment((int)($_POST['card_id'] ?? 0), $user['id'], trim($_POST['body'] ?? ''))) {
+                flash('error', 'Commentaire vide.');
+            }
+            redirect('?action=board');
+
+        case 'comment_delete':
+            $user = requireAuth();
+            deleteComment((int)($_POST['comment_id'] ?? 0), $user);
+            redirect('?action=board');
+
+        case 'library_condition':
+            $user = requireAuth();
+            setItemCondition((int)($_POST['item_id'] ?? 0), trim($_POST['condition'] ?? ''), $user);
+            redirect('?action=library');
+
+        case 'library_edit':
+            $user = requireAuth();
+            if (empty(trim($_POST['title'] ?? ''))) {
+                flash('error', 'Le titre est obligatoire.');
+            } elseif (!updateLibraryItem((int)($_POST['item_id'] ?? 0), $_POST, $user)) {
+                flash('error', 'Modification non autorisée.');
+            } else {
+                flash('success', 'Fiche mise à jour.');
+            }
+            redirect('?action=library');
 
         case 'library_add':
             $user = requireAuth();
@@ -166,11 +231,12 @@ switch ($action) {
     case 'login':    viewLogin();           break;
     case 'register': viewRegister();        break;
     case 'privacy':  viewPrivacy();         break;
-    case 'board':    viewBoard($user);      break;
-    case 'library':  viewLibrary($user);    break;
-    case 'my_data':  viewMyData($user);     break;
-    case 'admin':    viewAdmin($user);      break;
-    default:         redirect('?action=board');
+    case 'board':     viewBoard($user);      break;
+    case 'library':   viewLibrary($user);   break;
+    case 'dashboard': viewDashboard($user); break;
+    case 'my_data':   viewMyData($user);    break;
+    case 'admin':     viewAdmin($user);     break;
+    default:          redirect('?action=board');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -408,25 +474,156 @@ footer { text-align: center; padding: 1.25rem; color: var(--muted); font-size: .
 .w-full { width: 100%; }
 .danger-zone { background: #fde8e8; border: 1px solid #f5b7b1; border-radius: var(--radius); padding: 1.5rem; }
 .danger-zone h3 { color: #922b21; font-size: 1rem; margin-bottom: .5rem; }
+
+/* ── BADGES STATUT ── */
+.status-badge { display: inline-block; font-size: .67rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .06em; padding: .14rem .5rem; border-radius: 20px; }
+.status-a_planifier { background: #fff3cd; color: #7d5800; }
+.status-planifiee   { background: #d4edda; color: #155724; }
+.status-annulee     { background: #f8d7da; color: #721c24; }
+.status-reportee    { background: #d1ecf1; color: #0c5460; }
+
+/* ── SONDAGE DE DATES ── */
+.poll-section { margin-top: .6rem; border-top: 1px solid var(--border); padding-top: .55rem; }
+.poll-section-title { font-size: .7rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--muted); margin-bottom: .4rem; }
+.poll-option { display: flex; align-items: center; gap: .35rem; padding: .2rem 0; flex-wrap: wrap; }
+.poll-date-label { font-size: .84rem; font-weight: 500; flex: 1; min-width: 90px; }
+.poll-vote-count { font-size: .74rem; color: var(--muted); white-space: nowrap; cursor: default; }
+.poll-vote-btn {
+  display: inline-flex; align-items: center; gap: .2rem;
+  padding: .13rem .45rem; font-size: .74rem; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--bg); cursor: pointer;
+  font-family: 'DM Sans', sans-serif; transition: all .15s;
+}
+.poll-vote-btn:hover { border-color: var(--col-1); color: var(--col-1); }
+.poll-vote-btn.voted { background: var(--col-1); border-color: var(--col-1); color: #fff; }
+.poll-add-row { display: flex; gap: .3rem; margin-top: .45rem; flex-wrap: wrap; align-items: center; }
+.poll-admin-row { margin-top: .5rem; padding-top: .45rem; border-top: 1px dashed var(--border);
+  display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; }
+.poll-del-btn { padding: .1rem .35rem; font-size: .68rem; line-height: 1;
+  color: var(--muted); border: 1px solid var(--border); border-radius: 4px;
+  background: transparent; cursor: pointer; }
+.poll-del-btn:hover { color: #c0392b; border-color: #f5b7b1; }
+
+/* ── PRÉSENCES ── */
+.presence-section { margin-top: .6rem; border-top: 1px solid var(--border); padding-top: .55rem; }
+.presence-btns { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .4rem; }
+.presence-btn {
+  display: inline-flex; align-items: center; gap: .25rem;
+  padding: .22rem .6rem; border-radius: 20px; font-size: .78rem;
+  border: 1px solid var(--border); background: var(--bg); cursor: pointer;
+  font-family: 'DM Sans', sans-serif; transition: all .15s;
+}
+.presence-btn:hover { opacity: .8; }
+.presence-btn.will-be { background: #d4edda; color: #155724; border-color: #c3e6cb; }
+.presence-btn.wont-be { background: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+.presence-list { font-size: .76rem; color: var(--muted); margin-top: .2rem; cursor: default; }
+
+/* ── INTÉRÊTS (lecture) ── */
+.voters-row { font-size: .74rem; color: var(--muted); margin-top: .3rem;
+  font-style: italic; cursor: default; }
+
+/* ── COMMENTAIRES ── */
+.comment-section { margin-top: .5rem; border-top: 1px solid var(--border); padding-top: .5rem; }
+.comment-item { padding: .4rem 0; border-bottom: 1px dashed var(--border); font-size: .83rem; }
+.comment-item:last-child { border-bottom: none; }
+.comment-meta { font-size: .7rem; color: var(--muted); margin-bottom: .15rem; display: flex; align-items: center; gap: .4rem; }
+.comment-body { line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.comment-toggle {
+  display: inline-flex; align-items: center; gap: .25rem;
+  padding: .15rem .55rem; font-size: .76rem;
+  border: 1px solid var(--border); border-radius: 20px;
+  background: transparent; color: var(--muted); cursor: pointer;
+  font-family: 'DM Sans', sans-serif; transition: all .15s;
+}
+.comment-toggle:hover { border-color: var(--col-1); color: var(--col-1); }
+.comment-toggle.has { background: #e8f0e8; border-color: #9db89d; color: #3a6040; }
+
+/* ── CONDITION OBJET ── */
+.cond-badge { display: inline-block; font-size: .68rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .06em; padding: .12rem .45rem; border-radius: 20px; }
+.cond-ok     { background: #e2efd9; color: #4d7038; }
+.cond-lost   { background: #fce8e8; color: #9c3a3a; }
+.cond-broken { background: #fff3cd; color: #7d5800; }
+
+/* ── FILTER BAR ── */
+.filter-bar {
+  display: flex; gap: .45rem; flex-wrap: wrap; align-items: center;
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: .6rem 1rem;
+  margin-bottom: 1rem; box-shadow: var(--shadow);
+}
+.filter-bar input[type="search"],
+.filter-bar select {
+  padding: .42rem .75rem; border: 1px solid var(--border);
+  border-radius: 5px; background: var(--bg);
+  font-family: 'DM Sans', sans-serif; font-size: .86rem;
+  color: var(--text); outline: none; transition: border-color .2s;
+}
+.filter-bar input[type="search"] { flex: 1; min-width: 140px; }
+.filter-bar input[type="search"]:focus,
+.filter-bar select:focus { border-color: var(--col-1); }
+.filter-bar .spacer { flex: 1; }
+
+/* ── CALENDRIER ── */
+.cal-wrap {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 1rem 1.25rem; margin-bottom: 1.5rem;
+}
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: .7rem; }
+.cal-nav h3 { font-family: 'Lora', serif; font-size: 1.05rem; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.cal-head { text-align: center; font-size: .68rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: .3rem 0; }
+.cal-cell { min-height: 58px; border: 1px solid var(--border); border-radius: 4px;
+  padding: .25rem .35rem; font-size: .75rem; background: var(--bg); }
+.cal-cell.today { background: #e8f5e9; border-color: var(--col-1); }
+.cal-cell.other { opacity: .3; }
+.cal-num { font-weight: 500; color: var(--muted); margin-bottom: .15rem; font-size: .72rem; }
+.cal-ev { background: var(--col-1); color: #fff; border-radius: 3px;
+  padding: .07rem .28rem; margin-bottom: .1rem; font-size: .64rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+  line-height: 1.4; transition: opacity .15s; }
+.cal-ev:hover { opacity: .8; }
+.card.cal-focus { box-shadow: 0 0 0 2.5px var(--col-1); background: #f0f7f0; }
+
+/* ── ONGLETS BIBLIOTHÈQUE ── */
+.lib-tabs {
+  display: flex; gap: .35rem; flex-wrap: wrap;
+  margin-bottom: 1rem; padding-bottom: .75rem;
+  border-bottom: 2px solid var(--border);
+}
+.lib-tab {
+  padding: .38rem .85rem; border: 1px solid var(--border); border-radius: 20px;
+  font-size: .83rem; font-weight: 500; background: var(--bg); color: var(--muted);
+  cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all .15s;
+  white-space: nowrap;
+}
+.lib-tab:hover { color: var(--text); border-color: var(--col-1); }
+.lib-tab.active { background: var(--col-1); border-color: var(--col-1); color: #fff; }
 </style>
 </head>
 <body>
 HTML;
 
     if ($user) {
-        $board   = $currentAction === 'board'   ? 'active' : '';
-        $library = $currentAction === 'library' ? 'active' : '';
-        $mydata  = $currentAction === 'my_data' ? 'active' : '';
-        $admin   = $currentAction === 'admin'   ? 'active' : '';
+        $board   = $currentAction === 'board'     ? 'active' : '';
+        $library = $currentAction === 'library'   ? 'active' : '';
+        $bilan   = $currentAction === 'dashboard' ? 'active' : '';
+        $mydata  = $currentAction === 'my_data'   ? 'active' : '';
+        $admin   = $currentAction === 'admin'     ? 'active' : '';
         $uname   = h($user['display_name']);
         $csrf    = csrfField();
         echo <<<HTML
 <nav>
   <a class="nav-brand" href="?action=board">{$appName} <small>{$appSub}</small></a>
   <div class="nav-links">
-    <a href="?action=board"   class="{$board}">🌿 Tableau</a>
-    <a href="?action=library" class="{$library}">📚 Prêt-o-thèque</a>
-    <a href="?action=my_data" class="{$mydata}">👤 {$uname}</a>
+    <a href="?action=board"     class="{$board}">🌿 Tableau</a>
+    <a href="?action=library"   class="{$library}">📚 Prêt-o-thèque</a>
+    <a href="?action=dashboard" class="{$bilan}">📊 Bilan</a>
+    <a href="?action=my_data"   class="{$mydata}">👤 {$uname}</a>
 HTML;
         if ($isAdmin) {
             echo "<a href=\"?action=admin\" class=\"{$admin}\">⚙️ Admin</a>";
@@ -565,8 +762,45 @@ function viewBoard(array $user): void
     if ($err) echo '<div class="alert alert-error">'   . h($err) . '</div>';
     if ($ok)  echo '<div class="alert alert-success">' . h($ok)  . '</div>';
 
+    // Événements pour le calendrier (col 1, planifiée)
+    $calEvents = [];
+    foreach ($cards[1] ?? [] as $c) {
+        if (($c['status'] ?? '') === 'planifiee' && !empty($c['event_date'])) {
+            $calEvents[] = ['id' => (int)$c['id'], 'date' => $c['event_date'], 'title' => $c['title']];
+        }
+    }
+
+    // Barre de filtres
+    echo '<div class="filter-bar">';
+    echo '<input type="search" id="board-search" placeholder="🔍 Rechercher…" oninput="filterBoard()">';
+    echo '<select id="board-tag" onchange="filterBoard()"><option value="">Toutes catégories</option>';
+    foreach (TAG_META as $k => $t) {
+        echo '<option value="' . h($k) . '">' . $t['emoji'] . ' ' . $t['label'] . '</option>';
+    }
+    echo '</select>';
+    echo '<select id="board-aud" onchange="filterBoard()"><option value="">Tous publics</option>';
+    foreach (AUDIENCE_META as $k => $v) {
+        echo '<option value="' . h($k) . '">' . $v . '</option>';
+    }
+    echo '</select>';
+    echo '<button type="button" class="btn btn-ghost btn-sm" onclick="resetBoard()" title="Réinitialiser les filtres">✕</button>';
+    echo '<span class="spacer"></span>';
+    echo '<button type="button" class="btn btn-ghost btn-sm" id="cal-btn" onclick="toggleCalendar()">📅 Calendrier</button>';
+    echo '</div>';
+
+    // Calendrier (caché par défaut)
+    echo '<div id="cal-wrap" class="cal-wrap" style="display:none">';
+    echo '<div class="cal-nav">';
+    echo '<button type="button" class="btn btn-ghost btn-sm" onclick="calNav(-1)">◀</button>';
+    echo '<h3 id="cal-title"></h3>';
+    echo '<button type="button" class="btn btn-ghost btn-sm" onclick="calNav(1)">▶</button>';
+    echo '</div>';
+    echo '<div class="cal-grid" id="cal-grid"></div>';
+    echo '</div>';
+
     echo '<div class="board">';
 
+    $allComments = getAllComments();
     foreach (COL_META as $colId => $col) {
         $colCards = $cards[$colId] ?? [];
         $cls      = 'col-' . $colId;
@@ -580,7 +814,7 @@ function viewBoard(array $user): void
   <div class="cards-list">
 HTML;
         foreach ($colCards as $card) {
-            renderCard($card, $user, $colId);
+            renderCard($card, $user, $colId, $allComments[(int)$card['id']] ?? []);
         }
         echo '</div>';
 
@@ -596,8 +830,104 @@ HTML;
     renderCardModal();
 
     echo '</div>'; // .page
+
+    // Données événements pour le calendrier JS
+    $evJson = json_encode($calEvents, JSON_HEX_TAG | JSON_UNESCAPED_UNICODE);
+    echo '<script>const CAL_EVENTS=' . $evJson . ';</script>';
+
     echo <<<'JS'
 <script>
+/* ── Utilitaires ── */
+function toggleEl(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+/* ── Filtres tableau ── */
+let calFilterActive = false;
+
+function filterBoard() {
+  const q   = (document.getElementById('board-search').value || '').toLowerCase();
+  const tag = document.getElementById('board-tag').value;
+  const aud = document.getElementById('board-aud').value;
+  const calIds = calFilterActive ? new Set(CAL_EVENTS.map(e => String(e.id))) : null;
+  document.querySelectorAll('.card').forEach(card => {
+    const title = (card.dataset.title || '').toLowerCase();
+    const body  = (card.dataset.body  || '').toLowerCase();
+    const ok = (!q      || title.includes(q) || body.includes(q))
+            && (!tag    || card.dataset.tag      === tag)
+            && (!aud    || card.dataset.audience === aud)
+            && (!calIds || calIds.has(card.dataset.id));
+    card.style.display = ok ? '' : 'none';
+  });
+}
+function resetBoard() {
+  document.getElementById('board-search').value = '';
+  document.getElementById('board-tag').value    = '';
+  document.getElementById('board-aud').value    = '';
+  filterBoard();
+}
+
+/* ── Calendrier ── */
+const MONTHS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+const DAYS_FR   = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+let calY = new Date().getFullYear(), calM = new Date().getMonth();
+
+function toggleCalendar() {
+  const w     = document.getElementById('cal-wrap');
+  const shown = w.style.display !== 'none';
+  w.style.display = shown ? 'none' : 'block';
+  document.getElementById('cal-btn').classList.toggle('active', !shown);
+  calFilterActive = !shown;
+  // Quand le calendrier s'ouvre : filtrer le board sur les seules cartes planifiées
+  if (!shown) {
+    renderCal();
+    filterBoard(); // masque tout sauf les événements du calendrier
+  } else {
+    // Quand il se ferme : lever le filtre et retirer les highlights
+    document.querySelectorAll('.card.cal-focus').forEach(c => c.classList.remove('cal-focus'));
+    filterBoard(); // re-applique seulement la barre de filtre texte/tag/public
+  }
+}
+function calNav(dir) {
+  calM += dir;
+  if (calM < 0)  { calM = 11; calY--; }
+  if (calM > 11) { calM = 0;  calY++; }
+  renderCal();
+}
+function calClickEvent(cardId) {
+  // Retirer les anciens highlights
+  document.querySelectorAll('.card.cal-focus').forEach(c => c.classList.remove('cal-focus'));
+  const card = document.querySelector('.card[data-id="' + cardId + '"]');
+  if (!card) return;
+  card.classList.add('cal-focus');
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function renderCal() {
+  const today  = new Date().toISOString().slice(0, 10);
+  const first  = new Date(calY, calM, 1).getDay();
+  const offset = (first + 6) % 7; // lundi en premier
+  const total  = new Date(calY, calM + 1, 0).getDate();
+  document.getElementById('cal-title').textContent = MONTHS_FR[calM] + ' ' + calY;
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = DAYS_FR.map(d => '<div class="cal-head">' + d + '</div>').join('');
+  for (let i = 0; i < offset; i++) {
+    grid.insertAdjacentHTML('beforeend', '<div class="cal-cell other"></div>');
+  }
+  for (let d = 1; d <= total; d++) {
+    const ds  = calY + '-' + String(calM + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    const evs = CAL_EVENTS.filter(e => e.date === ds);
+    let html  = '<div class="cal-num">' + d + '</div>';
+    evs.forEach(e => {
+      const t = e.title.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+      html += '<div class="cal-ev" onclick="calClickEvent(' + e.id + ')" title="' + t + '">' + t + '</div>';
+    });
+    grid.insertAdjacentHTML('beforeend',
+      '<div class="cal-cell' + (ds === today ? ' today' : '') + '">' + html + '</div>');
+  }
+}
+
+/* ── Modal ajout de carte ── */
 function openAddModal(col) {
   document.getElementById('modal-col').value = col;
   const labels = ['Nouvelle idée', 'Planifier une activité', 'Archiver un souvenir'];
@@ -620,58 +950,81 @@ JS;
     layoutClose();
 }
 
-function renderCard(array $card, array $user, int $colId): void
+function renderCard(array $card, array $user, int $colId, array $comments = []): void
 {
-    $tag       = TAG_META[$card['tag']] ?? TAG_META['autre'];
-    $interests = getCardInterests((int) $card['id']);
+    $cardId     = (int) $card['id'];
+    $tag        = TAG_META[$card['tag']] ?? TAG_META['autre'];
+    $status     = $card['status'] ?? 'idea';
+    $canAct     = ($card['author_id'] == $user['id']) || ($user['role'] === 'admin');
+    $authorName = $card['author_name'] ? '— ' . h($card['author_name']) : '— anonyme';
+    $audience   = AUDIENCE_META[$card['audience']] ?? '';
+
+    $interests  = getCardInterests($cardId);
     $myInterest = false;
-    $interestNames = [];
+    $intNames   = [];
     foreach ($interests as $i) {
-        $interestNames[] = h($i['display_name']);
+        $intNames[] = h($i['display_name']);
         if ($i['user_id'] == $user['id']) {
             $myInterest = true;
         }
     }
     $intCount = count($interests);
-    $intLabel = $myInterest
-        ? ($intCount > 1 ? "✋ Toi + " . ($intCount - 1) . " autre" . ($intCount > 2 ? 's' : '') : '✋ Tu es partant·e')
-        : ($intCount > 0 ? "✋ {$intCount} partant" . ($intCount > 1 ? 's' : '') : '✋ Je suis partant·e');
-    $intActive = $myInterest ? 'active' : '';
-    $intTip    = $interestNames ? 'title="' . implode(', ', $interestNames) . '"' : '';
 
-    $canAct = ($card['author_id'] == $user['id']) || ($user['role'] === 'admin');
-    $authorName = $card['author_name'] ? '— ' . h($card['author_name']) : '— anonyme';
-    $audience   = AUDIENCE_META[$card['audience']] ?? '';
-    $eventDate  = $card['event_date'] ? '📅 ' . fmtDate($card['event_date']) : '';
+    echo '<div class="card" data-id="' . $cardId . '" data-title="' . h($card['title']) . '" data-body="' . h($card['body'] ?? '') . '" data-tag="' . h($card['tag']) . '" data-audience="' . h($card['audience'] ?? '') . '">';
 
-    echo '<div class="card">';
-    echo '<span class="tag ' . $tag['cls'] . '">' . $tag['emoji'] . ' ' . $tag['label'] . '</span>';
+    // Tag + badge statut (col 1)
+    echo '<div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.1rem">';
+    echo '<span class="tag ' . $tag['cls'] . '">' . $tag['emoji'] . ' ' . h($tag['label']) . '</span>';
+    if ($colId === 1) {
+        $sm = STATUS_META[$status] ?? STATUS_META['a_planifier'];
+        echo '<span class="status-badge status-' . h($status) . '">' . $sm['label'] . '</span>';
+    }
+    echo '</div>';
+
     echo '<div class="card-title">' . h($card['title']) . '</div>';
     if ($card['body']) {
         echo '<div class="card-body">' . nl2br(h($card['body'])) . '</div>';
     }
+
+    // Méta auteur / audience / date confirmée
+    $dateStr = ($card['event_date'] && $status === 'planifiee') ? '📅 ' . fmtDate($card['event_date']) : '';
     echo '<div class="card-meta">';
     echo '<span class="card-author">' . $authorName . '</span>';
-    echo '<span class="card-date">' . $audience . ($audience && $eventDate ? ' · ' : '') . $eventDate . '</span>';
+    echo '<span class="card-date">' . $audience . ($audience && $dateStr ? ' · ' : '') . $dateStr . '</span>';
     echo '</div>';
-    echo '<div class="card-actions">';
 
-    // Intérêt (col 1 seulement)
-    if ($colId === 1) {
+    // Intérêts — bouton interactif col 0, lecture seule col 1 & 2
+    if ($colId === 0) {
+        $btnLabel  = $myInterest
+            ? ($intCount > 1 ? '✋ Toi + ' . ($intCount - 1) . ' autre' . ($intCount > 2 ? 's' : '') : '✋ Tu es partant·e')
+            : ($intCount > 0  ? '✋ ' . $intCount . ' partant' . ($intCount > 1 ? 's' : '') : '✋ Je veux participer');
+        $intActive = $myInterest ? 'active' : '';
+        $intTip    = $intNames   ? 'title="' . implode(', ', $intNames) . '"' : '';
+        echo '<div class="card-actions">';
         echo '<form method="post" action="?action=interest_toggle" style="display:inline">';
         echo csrfField();
-        echo '<input type="hidden" name="card_id" value="' . (int) $card['id'] . '">';
-        echo '<button type="submit" class="interest-btn ' . $intActive . '" ' . $intTip . '>' . $intLabel . '</button>';
+        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+        echo '<button type="submit" class="interest-btn ' . $intActive . '" ' . $intTip . '>' . $btnLabel . '</button>';
         echo '</form>';
+    } else {
+        // Affichage lecture-seule des intérêts sur cols 1 & 2
+        if ($intCount > 0) {
+            $tip = 'title="Intéressé·es : ' . implode(', ', $intNames) . '"';
+            $txt = $myInterest
+                ? ($intCount > 1 ? '✋ Toi + ' . ($intCount - 1) . ' intéressé' . ($intCount > 2 ? 's' : '') : '✋ Tu étais intéressé·e')
+                : '✋ ' . $intCount . ' intéressé' . ($intCount > 1 ? 's' : '');
+            echo '<div class="voters-row" ' . $tip . '>' . $txt . '</div>';
+        }
+        echo '<div class="card-actions">';
     }
 
-    // Déplacer vers col suivante
+    // Bouton avancer
     if ($canAct && $colId < 2) {
         $nextCol  = $colId + 1;
         $nextIcon = $nextCol === 1 ? '📅 Planifier' : '✅ Archiver';
         echo '<form method="post" action="?action=card_move" style="display:inline">';
         echo csrfField();
-        echo '<input type="hidden" name="card_id" value="' . (int) $card['id'] . '">';
+        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
         echo '<input type="hidden" name="to_col"  value="' . $nextCol . '">';
         echo '<button type="submit" class="btn btn-ghost btn-sm">' . $nextIcon . '</button>';
         echo '</form>';
@@ -681,13 +1034,261 @@ function renderCard(array $card, array $user, int $colId): void
     if ($canAct) {
         echo '<form method="post" action="?action=card_delete" style="display:inline;margin-left:auto">';
         echo csrfField();
-        echo '<input type="hidden" name="card_id" value="' . (int) $card['id'] . '">';
+        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
         echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#f5b7b1" ';
         echo 'onclick="return confirm(\'Supprimer cette carte ?\')">✕</button>';
         echo '</form>';
     }
 
-    echo '</div></div>';
+    echo '</div>'; // .card-actions
+
+    // Col 1 : sondage ou présences
+    if ($colId === 1) {
+        renderPlanningSection($card, $user, $cardId, $status, $canAct);
+    }
+
+    // Section commentaires (toutes colonnes)
+    $commentCount = count($comments);
+    $hasCls       = $commentCount > 0 ? ' has' : '';
+    $cSectionId   = 'cmts-' . $cardId;
+    echo '<div style="margin-top:.4rem">';
+    echo '<button type="button" class="comment-toggle' . $hasCls . '" onclick="toggleEl(\'' . $cSectionId . '\')">';
+    echo '💬' . ($commentCount > 0 ? ' ' . $commentCount : '') . '</button>';
+    echo '</div>';
+    echo '<div id="' . $cSectionId . '" class="comment-section" style="display:none">';
+    foreach ($comments as $cmt) {
+        $canDelCmt = ($cmt['user_id'] == $user['id']) || ($user['role'] === 'admin');
+        echo '<div class="comment-item">';
+        echo '<div class="comment-meta">';
+        echo '<strong>' . h($cmt['author_name']) . '</strong>';
+        echo '<span>' . fmtDate($cmt['created_at']) . '</span>';
+        if ($canDelCmt) {
+            echo '<form method="post" action="?action=comment_delete" style="display:inline;margin-left:auto">';
+            echo csrfField();
+            echo '<input type="hidden" name="comment_id" value="' . (int)$cmt['id'] . '">';
+            echo '<button type="submit" class="poll-del-btn" title="Supprimer">✕</button>';
+            echo '</form>';
+        }
+        echo '</div>';
+        echo '<div class="comment-body">' . nl2br(h($cmt['body'])) . '</div>';
+        echo '</div>';
+    }
+    echo '<form method="post" action="?action=comment_add" style="margin-top:.45rem;display:flex;gap:.3rem;flex-wrap:wrap">';
+    echo csrfField();
+    echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+    echo '<textarea name="body" rows="2" placeholder="Ajouter un commentaire…" style="flex:1;min-width:120px;font-size:.82rem;padding:.35rem .55rem;border:1px solid var(--border);border-radius:5px;background:var(--bg);resize:vertical;font-family:\'DM Sans\',sans-serif"></textarea>';
+    echo '<button type="submit" class="btn btn-ghost btn-sm" style="align-self:flex-end">Envoyer</button>';
+    echo '</form>';
+    echo '</div>'; // .comment-section
+
+    echo '</div>'; // .card
+}
+
+function renderPlanningSection(array $card, array $user, int $cardId, string $status, bool $canAct): void
+{
+    if ($status === 'annulee' || $status === 'reportee') {
+        if ($canAct) {
+            $lbl = $status === 'annulee' ? '❌ Annulée' : '⏸ Reportée';
+            echo '<div class="poll-section"><div class="poll-admin-row">';
+            echo '<span class="text-sm text-muted">' . $lbl . ' —</span>';
+            echo '<form method="post" action="?action=card_status_update" style="display:inline">';
+            echo csrfField();
+            echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+            echo '<input type="hidden" name="status"  value="a_planifier">';
+            echo '<button type="submit" class="btn btn-ghost btn-sm">↺ Réactiver</button>';
+            echo '</form></div></div>';
+        }
+        return;
+    }
+
+    if ($status === 'planifiee') {
+        renderPresenceSection($card, $user, $cardId, $canAct);
+        return;
+    }
+
+    // a_planifier (ou 'idea' hérité)
+    $polls = getDatePolls($cardId);
+
+    echo '<div class="poll-section">';
+    echo '<div class="poll-section-title">📊 Sondage de dates</div>';
+
+    if (empty($polls)) {
+        echo '<p class="text-sm text-muted" style="margin-bottom:.35rem">Aucune date proposée.</p>';
+    }
+
+    foreach ($polls as $poll) {
+        $pollId    = (int) $poll['id'];
+        $votes     = $poll['votes'];
+        $voteCount = count($votes);
+        $myVote    = false;
+        $voteNames = [];
+        foreach ($votes as $v) {
+            $voteNames[] = h($v['display_name']);
+            if ($v['user_id'] == $user['id']) {
+                $myVote = true;
+            }
+        }
+        $canDelPoll = ($poll['created_by'] == $user['id'])
+                   || ($card['author_id']  == $user['id'])
+                   || ($user['role'] === 'admin');
+
+        echo '<div class="poll-option">';
+        echo '<span class="poll-date-label">' . fmtDate($poll['proposed_date']) . '</span>';
+
+        $vcTip = $voteNames ? 'title="' . implode(', ', $voteNames) . '"' : '';
+        echo '<span class="poll-vote-count" ' . $vcTip . '>' . $voteCount . ' vote' . ($voteCount > 1 ? 's' : '') . '</span>';
+
+        $voteActive = $myVote ? 'voted' : '';
+        $voteLabel  = $myVote ? '✓ Voté' : 'Voter';
+        echo '<form method="post" action="?action=date_poll_vote" style="display:inline">';
+        echo csrfField();
+        echo '<input type="hidden" name="poll_id" value="' . $pollId . '">';
+        echo '<button type="submit" class="poll-vote-btn ' . $voteActive . '">' . $voteLabel . '</button>';
+        echo '</form>';
+
+        if ($canDelPoll) {
+            echo '<form method="post" action="?action=date_poll_delete" style="display:inline">';
+            echo csrfField();
+            echo '<input type="hidden" name="poll_id" value="' . $pollId . '">';
+            echo '<button type="submit" class="poll-del-btn" title="Supprimer cette option">✕</button>';
+            echo '</form>';
+        }
+
+        echo '</div>'; // .poll-option
+    }
+
+    // Proposer une date (tout membre)
+    echo '<div class="poll-add-row">';
+    echo '<form method="post" action="?action=date_poll_add" style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">';
+    echo csrfField();
+    echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+    echo '<input type="date" name="proposed_date" required style="font-size:.8rem;padding:.25rem .5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg)">';
+    echo '<button type="submit" class="btn btn-ghost btn-sm">+ Proposer une date</button>';
+    echo '</form>';
+    echo '</div>';
+
+    // Admin / auteur : confirmer la date + changer statut
+    if ($canAct) {
+        // Pré-remplir avec la date la plus votée
+        $bestDate = '';
+        if (!empty($polls)) {
+            $sorted = $polls;
+            usort($sorted, fn($a, $b) => count($b['votes']) - count($a['votes']));
+            $bestDate = $sorted[0]['proposed_date'];
+        }
+
+        echo '<div class="poll-admin-row">';
+        echo '<form method="post" action="?action=card_confirm_date" style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">';
+        echo csrfField();
+        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+        echo '<input type="date" name="event_date" required value="' . h($bestDate) . '" style="font-size:.8rem;padding:.25rem .5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg)">';
+        echo '<button type="submit" class="btn btn-primary btn-sm">✓ Confirmer</button>';
+        echo '</form>';
+
+        echo '<form method="post" action="?action=card_status_update" style="display:inline">';
+        echo csrfField();
+        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+        echo '<input type="hidden" name="status"  value="annulee">';
+        echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#f5b7b1">Annuler</button>';
+        echo '</form>';
+
+        echo '<form method="post" action="?action=card_status_update" style="display:inline">';
+        echo csrfField();
+        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+        echo '<input type="hidden" name="status"  value="reportee">';
+        echo '<button type="submit" class="btn btn-ghost btn-sm">Reporter</button>';
+        echo '</form>';
+
+        echo '</div>'; // .poll-admin-row
+    }
+
+    echo '</div>'; // .poll-section
+}
+
+function renderPresenceSection(array $card, array $user, int $cardId, bool $canAct): void
+{
+    $presences   = getPresences($cardId);
+    $attending   = [];
+    $declining   = [];
+    $myAttending = null;
+
+    foreach ($presences as $p) {
+        if ((int) $p['attending'] === 1) {
+            $attending[] = h($p['display_name']);
+        } else {
+            $declining[] = h($p['display_name']);
+        }
+        if ($p['user_id'] == $user['id']) {
+            $myAttending = (int) $p['attending'];
+        }
+    }
+
+    echo '<div class="presence-section">';
+    echo '<div class="poll-section-title">👥 Présences</div>';
+
+    echo '<div class="presence-btns">';
+
+    $willClass = $myAttending === 1 ? ' will-be' : '';
+    echo '<form method="post" action="?action=presence_toggle" style="display:inline">';
+    echo csrfField();
+    echo '<input type="hidden" name="card_id"  value="' . $cardId . '">';
+    echo '<input type="hidden" name="attending" value="1">';
+    echo '<button type="submit" class="presence-btn' . $willClass . '">✅ Je serai là</button>';
+    echo '</form>';
+
+    $wontClass = $myAttending === 0 ? ' wont-be' : '';
+    echo '<form method="post" action="?action=presence_toggle" style="display:inline">';
+    echo csrfField();
+    echo '<input type="hidden" name="card_id"  value="' . $cardId . '">';
+    echo '<input type="hidden" name="attending" value="0">';
+    echo '<button type="submit" class="presence-btn' . $wontClass . '">😕 Je ne pourrai pas</button>';
+    echo '</form>';
+
+    echo '</div>'; // .presence-btns
+
+    if (!empty($attending)) {
+        $tip = 'title="' . implode(', ', $attending) . '"';
+        echo '<div class="presence-list" ' . $tip . '>';
+        echo '✅ ' . count($attending) . ' présent' . (count($attending) > 1 ? 's' : '') . ' : ' . implode(', ', $attending);
+        echo '</div>';
+    }
+    if (!empty($declining)) {
+        $tip = 'title="' . implode(', ', $declining) . '"';
+        echo '<div class="presence-list" ' . $tip . '>';
+        echo '😕 ' . count($declining) . ' absent' . (count($declining) > 1 ? 's' : '') . ' : ' . implode(', ', $declining);
+        echo '</div>';
+    }
+    if (empty($presences)) {
+        echo '<p class="text-sm text-muted">Personne n\'a encore confirmé.</p>';
+    }
+
+    if ($canAct) {
+        echo '<div class="poll-admin-row">';
+        echo '<form method="post" action="?action=card_confirm_date" style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">';
+        echo csrfField();
+        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+        echo '<input type="date" name="event_date" value="' . h($card['event_date'] ?? '') . '" style="font-size:.8rem;padding:.25rem .5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg)">';
+        echo '<button type="submit" class="btn btn-ghost btn-sm">✎ Modifier la date</button>';
+        echo '</form>';
+
+        echo '<form method="post" action="?action=card_status_update" style="display:inline">';
+        echo csrfField();
+        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+        echo '<input type="hidden" name="status"  value="annulee">';
+        echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#f5b7b1">Annuler</button>';
+        echo '</form>';
+
+        echo '<form method="post" action="?action=card_status_update" style="display:inline">';
+        echo csrfField();
+        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+        echo '<input type="hidden" name="status"  value="reportee">';
+        echo '<button type="submit" class="btn btn-ghost btn-sm">Reporter</button>';
+        echo '</form>';
+
+        echo '</div>';
+    }
+
+    echo '</div>'; // .presence-section
 }
 
 function renderCardModal(): void
@@ -737,11 +1338,60 @@ function viewLibrary(array $user): void
     if ($err) echo '<div class="alert alert-error">'   . h($err) . '</div>';
     if ($ok)  echo '<div class="alert alert-success">' . h($ok)  . '</div>';
 
-    // Grouper par catégorie
-    $bycat = [];
+    // Grouper par catégorie + pré-charger les stats (pour les onglets)
+    $bycat       = [];
     foreach ($items as $it) {
         $bycat[$it['category']][] = $it;
     }
+    $activeLoans = getActiveLoans();
+    $topItems    = getTopItems(10);
+    $topFiltered = array_filter($topItems, fn($i) => (int)$i['loan_count'] > 0);
+
+    // ── Onglets de navigation
+    echo '<div class="lib-tabs">';
+    echo '<button class="lib-tab active" onclick="switchLibTab(\'\', this)">Tout';
+    if (count($items) > 0) {
+        echo ' <span style="opacity:.65">(' . count($items) . ')</span>';
+    }
+    echo '</button>';
+    foreach (LIB_CAT_META as $k => $m) {
+        $cnt = count($bycat[$k] ?? []);
+        if ($cnt === 0) continue;
+        echo '<button class="lib-tab" onclick="switchLibTab(\'' . h($k) . '\', this)">'
+            . $m['emoji'] . ' ' . $m['label']
+            . ' <span style="opacity:.65">(' . $cnt . ')</span></button>';
+    }
+    if (!empty($activeLoans)) {
+        echo '<button class="lib-tab" onclick="switchLibTab(\'__loans\', this)">📋 Emprunts'
+            . ' <span style="opacity:.65">(' . count($activeLoans) . ')</span></button>';
+    }
+    if (!empty($topFiltered)) {
+        echo '<button class="lib-tab" onclick="switchLibTab(\'__top\', this)">🏆 Top</button>';
+    }
+    echo '</div>';
+
+    // ── Barre de filtres texte (masquée sur onglets Emprunts / Top)
+    echo '<div class="filter-bar" id="lib-filter-bar">';
+    echo '<input type="search" id="lib-search" placeholder="🔍 Rechercher titre, auteur, description…" oninput="filterLib()">';
+    echo '<select id="lib-cat" onchange="filterLib()"><option value="">Toutes catégories</option>';
+    foreach (LIB_CAT_META as $k => $m) {
+        echo '<option value="' . h($k) . '">' . $m['emoji'] . ' ' . $m['label'] . '</option>';
+    }
+    echo '</select>';
+    echo '<select id="lib-status" onchange="filterLib()">';
+    echo '<option value="">Tous statuts</option>';
+    echo '<option value="avail">✓ Disponibles</option>';
+    echo '<option value="taken">⏳ Empruntés / indisponibles</option>';
+    echo '</select>';
+    echo '<select id="lib-cond" onchange="filterLib()">';
+    echo '<option value="">Toutes conditions</option>';
+    echo '<option value="ok">OK</option>';
+    echo '<option value="lost">❌ Perdus</option>';
+    echo '<option value="broken">🔧 Cassés</option>';
+    echo '</select>';
+    echo '<button type="button" class="btn btn-ghost btn-sm" onclick="resetLib()" title="Réinitialiser">✕</button>';
+    echo '</div>';
+    echo '<div id="lib-empty" style="display:none;text-align:center;padding:2rem 0;color:var(--muted)">Aucun objet ne correspond aux filtres.</div>';
 
     if (empty($items)) {
         echo '<p class="text-muted" style="text-align:center;padding:3rem 0">Aucun objet pour l\'instant. Soyez le premier à proposer quelque chose !</p>';
@@ -751,7 +1401,7 @@ function viewLibrary(array $user): void
         if (empty($bycat[$cat])) {
             continue;
         }
-        echo '<div class="section-box mt-2">';
+        echo '<div class="section-box mt-2 lib-section" data-cat="' . h($cat) . '">';
         echo '<div class="section-box-header"><h2>' . $meta['emoji'] . ' ' . $meta['label'] . '</h2></div>';
         echo '<div class="section-box-body"><div class="lib-grid">';
         foreach ($bycat[$cat] as $it) {
@@ -767,7 +1417,7 @@ function viewLibrary(array $user): void
     echo '<form method="post" action="?action=library_add">';
     echo csrfField();
     echo '<div style="display:flex;flex-direction:column;gap:1rem">';
-    echo '<div class="form-group"><label>Catégorie</label><select name="category">';
+    echo '<div class="form-group"><label>Catégorie</label><select name="category" id="add-cat" onchange="updateLibFields(this.value,\'add\')">';
     foreach (LIB_CAT_META as $k => $m) {
         echo '<option value="' . h($k) . '">' . $m['emoji'] . ' ' . $m['label'] . '</option>';
     }
@@ -775,14 +1425,229 @@ function viewLibrary(array $user): void
     echo '<div class="form-group"><label>Titre *</label><input type="text" name="title" required></div>';
     echo '<div class="form-group"><label>Auteur / marque / info</label><input type="text" name="subtitle" placeholder="ex : Robin Hobb, DeWalt, Wingspan…"></div>';
     echo '<div class="form-group"><label>Description</label><textarea name="description" placeholder="État, édition, remarque…"></textarea></div>';
+    echo '<div class="form-group"><label>Lien (URL)</label><input type="url" name="url" placeholder="https://…"></div>';
+    // ── Champs jeux
+    echo '<div id="add-game-fields" style="display:none;flex-direction:column;gap:1rem">';
+    echo '<div class="grid-2">';
+    echo '<div class="form-group"><label>Durée d\'une partie</label><input type="text" name="game_duration" placeholder="ex : 30–60 min"></div>';
+    echo '<div class="form-group"><label>Âge minimum</label><input type="number" name="age_min" min="0" max="99" placeholder="ex : 8"></div>';
+    echo '</div>';
+    echo '<div class="grid-2">';
+    echo '<div class="form-group"><label>Joueurs min</label><input type="number" name="player_min" min="1" max="99" placeholder="ex : 2"></div>';
+    echo '<div class="form-group"><label>Joueurs max</label><input type="number" name="player_max" min="1" max="99" placeholder="ex : 6"></div>';
+    echo '</div>';
+    echo '</div>';
+    // ── Champs livres
+    echo '<div id="add-book-fields" style="display:none;flex-direction:column;gap:1rem">';
+    echo '<div class="grid-2">';
+    echo '<div class="form-group"><label>Genre / catégorie</label><input type="text" name="book_genre" placeholder="ex : Roman, BD, Essai…"></div>';
+    echo '<div class="form-group"><label>Âge cible</label><input type="number" name="age_min" min="0" max="99" placeholder="ex : 12"></div>';
+    echo '</div>';
+    echo '</div>';
     echo '<div class="modal-actions"><button type="button" class="btn btn-ghost" onclick="document.getElementById(\'lib-modal\').classList.remove(\'open\')">Annuler</button><button type="submit" class="btn btn-primary">Ajouter</button></div>';
     echo '</div></form></div></div>';
 
+    // ── Modal d'édition (unique, peuplé par JS)
+    echo '<div class="modal-overlay" id="lib-edit-modal">';
+    echo '<div class="modal">';
+    echo '<h3>Modifier la fiche</h3>';
+    echo '<form method="post" action="?action=library_edit">';
+    echo csrfField();
+    echo '<input type="hidden" name="item_id" id="edit-item-id">';
+    echo '<div style="display:flex;flex-direction:column;gap:1rem">';
+    echo '<div class="form-group"><label>Catégorie</label><select name="category" id="edit-cat" onchange="updateLibFields(this.value,\'edit\')">';
+    foreach (LIB_CAT_META as $k => $m) {
+        echo '<option value="' . h($k) . '">' . $m['emoji'] . ' ' . $m['label'] . '</option>';
+    }
+    echo '</select></div>';
+    echo '<div class="form-group"><label>Titre *</label><input type="text" name="title" id="edit-title" required></div>';
+    echo '<div class="form-group"><label>Auteur / marque / info</label><input type="text" name="subtitle" id="edit-subtitle" placeholder="ex : Robin Hobb, DeWalt, Wingspan…"></div>';
+    echo '<div class="form-group"><label>Description</label><textarea name="description" id="edit-description" placeholder="État, édition, remarque…"></textarea></div>';
+    echo '<div class="form-group"><label>Lien (URL)</label><input type="url" name="url" id="edit-url" placeholder="https://…"></div>';
+    // ── Champs jeux
+    echo '<div id="edit-game-fields" style="display:none;flex-direction:column;gap:1rem">';
+    echo '<div class="grid-2">';
+    echo '<div class="form-group"><label>Durée d\'une partie</label><input type="text" name="game_duration" id="edit-game-duration" placeholder="ex : 30–60 min"></div>';
+    echo '<div class="form-group"><label>Âge minimum</label><input type="number" name="age_min" id="edit-age-min-game" min="0" max="99" placeholder="ex : 8"></div>';
+    echo '</div>';
+    echo '<div class="grid-2">';
+    echo '<div class="form-group"><label>Joueurs min</label><input type="number" name="player_min" id="edit-player-min" min="1" max="99" placeholder="ex : 2"></div>';
+    echo '<div class="form-group"><label>Joueurs max</label><input type="number" name="player_max" id="edit-player-max" min="1" max="99" placeholder="ex : 6"></div>';
+    echo '</div>';
+    echo '</div>';
+    // ── Champs livres
+    echo '<div id="edit-book-fields" style="display:none;flex-direction:column;gap:1rem">';
+    echo '<div class="grid-2">';
+    echo '<div class="form-group"><label>Genre / catégorie</label><input type="text" name="book_genre" id="edit-book-genre" placeholder="ex : Roman, BD, Essai…"></div>';
+    echo '<div class="form-group"><label>Âge cible</label><input type="number" name="age_min" id="edit-age-min-book" min="0" max="99" placeholder="ex : 12"></div>';
+    echo '</div>';
+    echo '</div>';
+    echo '<div class="modal-actions"><button type="button" class="btn btn-ghost" onclick="document.getElementById(\'lib-edit-modal\').classList.remove(\'open\')">Annuler</button><button type="submit" class="btn btn-primary">Enregistrer</button></div>';
+    echo '</div></form></div></div>';
+
+    // ── Journal des emprunts en cours (onglet dédié, caché par défaut)
+    if (!empty($activeLoans)) {
+        echo '<div class="section-box mt-2" id="lib-panel-loans" style="display:none">';
+        echo '<div class="section-box-header"><h2>📋 Journal des emprunts en cours</h2>';
+        echo '<span class="text-sm text-muted">' . count($activeLoans) . ' emprunt' . (count($activeLoans) > 1 ? 's' : '') . '</span></div>';
+        echo '<div style="overflow-x:auto"><table class="data-table">';
+        echo '<thead><tr><th>Objet</th><th>Emprunté par</th><th>Depuis le</th><th>Durée</th><th>Retour prévu</th>';
+        if ($user['role'] === 'admin') {
+            echo '<th>Action</th>';
+        }
+        echo '</tr></thead><tbody>';
+        foreach ($activeLoans as $loan) {
+            $lcat    = LIB_CAT_META[$loan['category']] ?? LIB_CAT_META['autre'];
+            $days    = (int) $loan['days_out'];
+            $dLabel  = $days === 0 ? "Auj." : $days . ' j';
+            $overdue = ($loan['due_date'] && $loan['due_date'] < date('Y-m-d')) ? ' style="color:#c0392b;font-weight:600"' : '';
+            echo '<tr>';
+            echo '<td>' . $lcat['emoji'] . ' ' . h($loan['item_title']) . '</td>';
+            echo '<td>' . h($loan['borrower_name']) . '</td>';
+            echo '<td>' . fmtDate($loan['loaned_at']) . '</td>';
+            echo '<td' . $overdue . '>' . $dLabel . '</td>';
+            echo '<td>' . ($loan['due_date'] ? fmtDate($loan['due_date']) : '—') . '</td>';
+            if ($user['role'] === 'admin') {
+                echo '<td><form method="post" action="?action=library_return">';
+                echo csrfField();
+                echo '<input type="hidden" name="loan_id" value="' . (int)$loan['id'] . '">';
+                echo '<button type="submit" class="btn btn-ghost btn-sm">↩ Retour</button>';
+                echo '</form></td>';
+            }
+            echo '</tr>';
+        }
+        echo '</tbody></table></div></div>';
+    }
+
+    // ── Top des objets empruntés (onglet dédié, caché par défaut)
+    if (!empty($topFiltered)) {
+        echo '<div class="section-box mt-2" id="lib-panel-top" style="display:none">';
+        echo '<div class="section-box-header"><h2>🏆 Top des objets empruntés</h2></div>';
+        echo '<div style="overflow-x:auto"><table class="data-table">';
+        echo '<thead><tr><th>#</th><th>Objet</th><th>Nb emprunts</th><th>Durée cumulée</th><th>État</th></tr></thead><tbody>';
+        $rank = 1;
+        foreach ($topFiltered as $top) {
+            $tcat  = LIB_CAT_META[$top['category']] ?? LIB_CAT_META['autre'];
+            $tcond = CONDITION_META[$top['condition'] ?? 'ok'] ?? CONDITION_META['ok'];
+            $days  = (int) $top['total_days'];
+            echo '<tr>';
+            echo '<td><strong>' . $rank++ . '</strong></td>';
+            echo '<td>' . $tcat['emoji'] . ' ' . h($top['title']) . '</td>';
+            echo '<td>' . $top['loan_count'] . ' emprunt' . ($top['loan_count'] > 1 ? 's' : '') . '</td>';
+            echo '<td>' . $days . ' jour' . ($days > 1 ? 's' : '') . '</td>';
+            echo '<td><span class="cond-badge ' . $tcond['cls'] . '">' . $tcond['label'] . '</span></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table></div></div>';
+    }
+
     echo <<<'JS'
 <script>
+/* ── Navigation bibliothèque ── */
+let activeLibTab = '';
+
+function switchLibTab(tab, btn) {
+  activeLibTab = tab;
+  document.querySelectorAll('.lib-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const isLoans = tab === '__loans';
+  const isTop   = tab === '__top';
+  const isCat   = !isLoans && !isTop;
+  // Panneaux gestion
+  const pLoans = document.getElementById('lib-panel-loans');
+  const pTop   = document.getElementById('lib-panel-top');
+  if (pLoans) pLoans.style.display = isLoans ? '' : 'none';
+  if (pTop)   pTop.style.display   = isTop   ? '' : 'none';
+  // Barre de filtre uniquement sur le catalogue
+  document.getElementById('lib-filter-bar').style.display = isCat ? '' : 'none';
+  document.getElementById('lib-empty').style.display = 'none';
+  if (isCat) {
+    document.getElementById('lib-cat').value = (tab && !tab.startsWith('__')) ? tab : '';
+    filterLib();
+  } else {
+    document.querySelectorAll('.lib-section').forEach(s => s.style.display = 'none');
+  }
+}
+
+function filterLib() {
+  const q      = (document.getElementById('lib-search').value  || '').toLowerCase();
+  const cat    = document.getElementById('lib-cat').value;
+  const status = document.getElementById('lib-status').value;
+  const cond   = document.getElementById('lib-cond').value;
+  let anyVisible = false;
+  document.querySelectorAll('.lib-card').forEach(card => {
+    const title = card.dataset.title || '';
+    const sub   = card.dataset.sub   || '';
+    const desc  = card.dataset.desc  || '';
+    const ok = (!q      || title.includes(q) || sub.includes(q) || desc.includes(q))
+            && (!cat    || card.dataset.cat    === cat)
+            && (!status || card.dataset.status === status)
+            && (!cond   || card.dataset.cond   === cond);
+    card.style.display = ok ? '' : 'none';
+    if (ok) anyVisible = true;
+  });
+  // Masquer les sections vides (en respectant l'onglet actif)
+  document.querySelectorAll('.lib-section').forEach(sec => {
+    const tabOk      = !activeLibTab || sec.dataset.cat === activeLibTab;
+    const hasVisible = [...sec.querySelectorAll('.lib-card')].some(c => c.style.display !== 'none');
+    sec.style.display = (tabOk && hasVisible) ? '' : 'none';
+  });
+  document.getElementById('lib-empty').style.display = anyVisible ? 'none' : 'block';
+}
+
+function resetLib() {
+  document.getElementById('lib-search').value = '';
+  document.getElementById('lib-cat').value    = '';
+  document.getElementById('lib-status').value = '';
+  document.getElementById('lib-cond').value   = '';
+  filterLib();
+}
+
 document.getElementById('lib-modal').addEventListener('click', function(e){
   if(e.target===this)this.classList.remove('open');
 });
+document.getElementById('lib-edit-modal').addEventListener('click', function(e){
+  if(e.target===this)this.classList.remove('open');
+});
+
+function updateLibFields(cat, prefix) {
+  const gameFields = document.getElementById(prefix + '-game-fields');
+  const bookFields = document.getElementById(prefix + '-book-fields');
+  const isGame = cat === 'jeu';
+  const isBook = cat === 'livre';
+  if (gameFields) {
+    gameFields.style.display = isGame ? 'flex' : 'none';
+    gameFields.querySelectorAll('input,select,textarea').forEach(el => el.disabled = !isGame);
+  }
+  if (bookFields) {
+    bookFields.style.display = isBook ? 'flex' : 'none';
+    bookFields.querySelectorAll('input,select,textarea').forEach(el => el.disabled = !isBook);
+  }
+}
+// initialiser l'état des champs au chargement
+document.addEventListener('DOMContentLoaded', function() {
+  const addCat = document.getElementById('add-cat');
+  if (addCat) updateLibFields(addCat.value, 'add');
+});
+
+function openLibEdit(btn) {
+  const card = btn.closest('.lib-card');
+  const d = JSON.parse(card.dataset.item);
+  document.getElementById('edit-item-id').value        = d.id;
+  document.getElementById('edit-cat').value            = d.category;
+  document.getElementById('edit-title').value          = d.title;
+  document.getElementById('edit-subtitle').value       = d.subtitle;
+  document.getElementById('edit-description').value    = d.description;
+  document.getElementById('edit-url').value            = d.url;
+  document.getElementById('edit-game-duration').value  = d.game_duration;
+  document.getElementById('edit-age-min-game').value   = (d.category === 'jeu'   && d.age_min) ? d.age_min : '';
+  document.getElementById('edit-age-min-book').value   = (d.category === 'livre' && d.age_min) ? d.age_min : '';
+  document.getElementById('edit-player-min').value     = d.player_min;
+  document.getElementById('edit-player-max').value     = d.player_max;
+  document.getElementById('edit-book-genre').value     = d.book_genre;
+  updateLibFields(d.category, 'edit');
+  document.getElementById('lib-edit-modal').classList.add('open');
+}
 </script>
 JS;
 
@@ -792,15 +1657,57 @@ JS;
 
 function renderLibItem(array $it, array $user): void
 {
-    $cat     = LIB_CAT_META[$it['category']] ?? LIB_CAT_META['autre'];
-    $avail   = (bool) $it['available'];
-    $canAct  = $it['owner_id'] == $user['id'] || $user['role'] === 'admin';
-    $statusCls   = $avail ? 'avail' : 'taken';
-    $statusLabel = $avail ? '✓ Disponible' : '⏳ Emprunté par ' . h($it['borrower_name'] ?? '…');
-    $owner       = $it['owner_name'] ? 'Proposé par ' . h($it['owner_name']) : '';
+    $cat       = LIB_CAT_META[$it['category']] ?? LIB_CAT_META['autre'];
+    $condition = $it['condition'] ?? 'ok';
+    $cond      = CONDITION_META[$condition] ?? CONDITION_META['ok'];
+    $avail     = (bool) $it['available'];
+    $canAct    = $it['owner_id'] == $user['id'] || $user['role'] === 'admin';
+    $totalDays = (int)($it['total_days'] ?? 0);
 
-    echo '<div class="lib-card">';
+    if ($condition === 'lost') {
+        $statusCls   = 'taken';
+        $statusLabel = '❌ Perdu';
+    } elseif ($condition === 'broken') {
+        $statusCls   = 'taken';
+        $statusLabel = '🔧 Cassé / hors service';
+    } elseif (!$avail) {
+        $since       = $it['loaned_at'] ? ' depuis le ' . fmtDate($it['loaned_at']) : '';
+        $statusCls   = 'taken';
+        $statusLabel = '⏳ Emprunté par ' . h($it['borrower_name'] ?? '…') . $since;
+    } else {
+        $statusCls   = 'avail';
+        $statusLabel = '✓ Disponible';
+    }
+
+    $dataStatus = ($avail && $condition === 'ok') ? 'avail' : 'taken';
+    $itemJson   = htmlspecialchars(json_encode([
+        'id'            => (int)$it['id'],
+        'category'      => $it['category'],
+        'title'         => $it['title'],
+        'subtitle'      => $it['subtitle']      ?? '',
+        'description'   => $it['description']   ?? '',
+        'url'           => $it['url']           ?? '',
+        'game_duration' => $it['game_duration'] ?? '',
+        'age_min'       => $it['age_min']       ?? '',
+        'player_min'    => $it['player_min']    ?? '',
+        'player_max'    => $it['player_max']    ?? '',
+        'book_genre'    => $it['book_genre']    ?? '',
+    ], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+    echo '<div class="lib-card"'
+        . ' data-title="' . h(mb_strtolower($it['title']))           . '"'
+        . ' data-sub="'   . h(mb_strtolower($it['subtitle']   ?? '')) . '"'
+        . ' data-desc="'  . h(mb_strtolower($it['description'] ?? '')) . '"'
+        . ' data-cat="'   . h($it['category'])  . '"'
+        . ' data-status="'. $dataStatus          . '"'
+        . ' data-cond="'  . h($condition)        . '"'
+        . ' data-item="'  . $itemJson            . '"'
+        . '>';
+    echo '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.3rem;margin-bottom:.25rem">';
     echo '<div class="lib-card-cat">' . $cat['emoji'] . ' ' . $cat['label'] . '</div>';
+    if ($condition !== 'ok') {
+        echo '<span class="cond-badge ' . $cond['cls'] . '">' . $cond['label'] . '</span>';
+    }
+    echo '</div>';
     echo '<div class="lib-card-title">' . h($it['title']) . '</div>';
     if ($it['subtitle']) {
         echo '<div class="lib-card-sub">' . h($it['subtitle']) . '</div>';
@@ -809,12 +1716,45 @@ function renderLibItem(array $it, array $user): void
         echo '<div class="lib-card-desc">' . h($it['description']) . '</div>';
     }
     echo '<span class="lib-status ' . $statusCls . '">' . $statusLabel . '</span>';
-    if ($owner) {
-        echo '<div class="text-sm text-muted mt-1">' . $owner . '</div>';
+    if ($it['owner_name']) {
+        echo '<div class="text-sm text-muted mt-1">🏠 Propriétaire : ' . h($it['owner_name']) . '</div>';
     }
-    echo '<div class="lib-card-actions">';
+    if ($totalDays > 0) {
+        echo '<div class="text-sm text-muted mt-1">⏱ ' . $totalDays . ' jour' . ($totalDays > 1 ? 's' : '') . ' d\'emprunt cumulé' . ($totalDays > 1 ? 's' : '') . '</div>';
+    }
 
-    if ($avail && $it['owner_id'] != $user['id']) {
+    // ── Métadonnées enrichies
+    $metaLines = [];
+    if (!empty($it['url'])) {
+        $safeUrl   = htmlspecialchars($it['url'], ENT_QUOTES, 'UTF-8');
+        $metaLines[] = '🔗 <a href="' . $safeUrl . '" target="_blank" rel="noopener noreferrer" style="color:var(--col-1)">Voir la fiche</a>';
+    }
+    if (!empty($it['game_duration'])) {
+        $metaLines[] = '⏰ ' . h($it['game_duration']);
+    }
+    $ageMin = isset($it['age_min']) && $it['age_min'] !== null && $it['age_min'] !== '' ? (int)$it['age_min'] : null;
+    if ($ageMin !== null) {
+        $metaLines[] = '🎂 Dès ' . $ageMin . ' ans';
+    }
+    $pMin = isset($it['player_min']) && $it['player_min'] !== null && $it['player_min'] !== '' ? (int)$it['player_min'] : null;
+    $pMax = isset($it['player_max']) && $it['player_max'] !== null && $it['player_max'] !== '' ? (int)$it['player_max'] : null;
+    if ($pMin !== null) {
+        $pRange      = $pMin . ($pMax !== null && $pMax !== $pMin ? '–' . $pMax : '+');
+        $metaLines[] = '👥 ' . $pRange . ' joueur' . ($pMin > 1 || $pMax > 1 ? 's' : '');
+    }
+    if (!empty($it['book_genre'])) {
+        $metaLines[] = '📖 ' . h($it['book_genre']);
+    }
+    foreach ($metaLines as $ml) {
+        echo '<div class="text-sm text-muted mt-1">' . $ml . '</div>';
+    }
+
+    echo '<div class="lib-card-actions">';
+    if ($canAct) {
+        echo '<button type="button" class="btn btn-ghost btn-sm" onclick="openLibEdit(this)" title="Modifier la fiche">✏️</button>';
+    }
+
+    if ($avail && $it['owner_id'] != $user['id'] && $condition === 'ok') {
         echo '<form method="post" action="?action=library_borrow">';
         echo csrfField();
         echo '<input type="hidden" name="item_id" value="' . (int)$it['id'] . '">';
@@ -823,7 +1763,7 @@ function renderLibItem(array $it, array $user): void
         echo '</form>';
     }
 
-    if (!$avail && $it['borrower_id'] == $user['id']) {
+    if (!$avail && $it['borrower_id'] == $user['id'] && $condition === 'ok') {
         echo '<form method="post" action="?action=library_return">';
         echo csrfField();
         echo '<input type="hidden" name="loan_id" value="' . (int)$it['loan_id'] . '">';
@@ -831,13 +1771,33 @@ function renderLibItem(array $it, array $user): void
         echo '</form>';
     }
 
-    // Admin/owner peut forcer le retour ou supprimer
     if ($canAct) {
-        if (!$avail) {
+        if (!$avail && $condition === 'ok') {
             echo '<form method="post" action="?action=library_return">';
             echo csrfField();
             echo '<input type="hidden" name="loan_id" value="' . (int)$it['loan_id'] . '">';
             echo '<button type="submit" class="btn btn-ghost btn-sm">↩ Retour forcé</button>';
+            echo '</form>';
+        }
+        if ($condition === 'ok') {
+            echo '<form method="post" action="?action=library_condition" style="display:inline">';
+            echo csrfField();
+            echo '<input type="hidden" name="item_id" value="' . (int)$it['id'] . '">';
+            echo '<input type="hidden" name="condition" value="lost">';
+            echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#9c3a3a;border-color:#f5b7b1" onclick="return confirm(\'Marquer comme perdu ?\')">❌ Perdu</button>';
+            echo '</form>';
+            echo '<form method="post" action="?action=library_condition" style="display:inline">';
+            echo csrfField();
+            echo '<input type="hidden" name="item_id" value="' . (int)$it['id'] . '">';
+            echo '<input type="hidden" name="condition" value="broken">';
+            echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#7d5800;border-color:#ffe69c" onclick="return confirm(\'Marquer comme cassé ?\')">🔧 Cassé</button>';
+            echo '</form>';
+        } else {
+            echo '<form method="post" action="?action=library_condition" style="display:inline">';
+            echo csrfField();
+            echo '<input type="hidden" name="item_id" value="' . (int)$it['id'] . '">';
+            echo '<input type="hidden" name="condition" value="ok">';
+            echo '<button type="submit" class="btn btn-ghost btn-sm">↺ Réactiver</button>';
             echo '</form>';
         }
         echo '<form method="post" action="?action=library_delete" style="margin-left:auto">';
@@ -848,6 +1808,147 @@ function renderLibItem(array $it, array $user): void
     }
 
     echo '</div></div>';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VUE — BILAN PERSONNEL
+// ═══════════════════════════════════════════════════════════
+
+function viewDashboard(array $user): void
+{
+    layoutOpen('Bilan', $user, 'dashboard');
+    $data = getDashboardData($user['id']);
+    $ok   = flash('success');
+    $err  = flash('error');
+
+    echo '<div class="page">';
+    echo '<div class="page-header"><h1>📊 Bilan personnel</h1><p>Vos emprunts, prêts et activités dans le groupe.</p></div>';
+    if ($err) echo '<div class="alert alert-error">'   . h($err) . '</div>';
+    if ($ok)  echo '<div class="alert alert-success">' . h($ok)  . '</div>';
+
+    // ── Objets que j'ai prêtés (actuellement empruntés)
+    echo '<div class="section-box mt-2">';
+    echo '<div class="section-box-header"><h2>📤 Mes objets actuellement empruntés</h2>';
+    echo '<span class="text-sm text-muted">' . count($data['lent']) . ' en cours</span></div>';
+    if (empty($data['lent'])) {
+        echo '<div class="section-box-body"><p class="text-muted">Aucun de vos objets n\'est emprunté en ce moment.</p></div>';
+    } else {
+        echo '<div style="overflow-x:auto"><table class="data-table">';
+        echo '<thead><tr><th>Objet</th><th>Emprunté par</th><th>Depuis le</th><th>Durée</th><th>Retour prévu</th></tr></thead><tbody>';
+        foreach ($data['lent'] as $row) {
+            $cat    = LIB_CAT_META[$row['category']] ?? LIB_CAT_META['autre'];
+            $days   = (int)$row['days_out'];
+            $overdue = ($row['due_date'] && $row['due_date'] < date('Y-m-d')) ? ' style="color:#c0392b;font-weight:600"' : '';
+            echo '<tr>';
+            echo '<td>' . $cat['emoji'] . ' ' . h($row['title']) . '</td>';
+            echo '<td>' . h($row['borrower_name']) . '</td>';
+            echo '<td>' . fmtDate($row['loaned_at']) . '</td>';
+            echo '<td>' . ($days === 0 ? 'Auj.' : $days . ' j') . '</td>';
+            echo '<td' . $overdue . '>' . ($row['due_date'] ? fmtDate($row['due_date']) : '—') . '</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table></div>';
+    }
+    echo '</div>';
+
+    // ── Objets que j'emprunte
+    echo '<div class="section-box mt-2">';
+    echo '<div class="section-box-header"><h2>📥 Mes emprunts en cours</h2>';
+    echo '<span class="text-sm text-muted">' . count($data['borrowed']) . ' en cours</span></div>';
+    if (empty($data['borrowed'])) {
+        echo '<div class="section-box-body"><p class="text-muted">Vous n\'avez aucun emprunt en cours.</p></div>';
+    } else {
+        echo '<div style="overflow-x:auto"><table class="data-table">';
+        echo '<thead><tr><th>Objet</th><th>Propriétaire</th><th>Depuis le</th><th>Durée</th><th>Retour prévu</th><th>Action</th></tr></thead><tbody>';
+        foreach ($data['borrowed'] as $row) {
+            $cat    = LIB_CAT_META[$row['category']] ?? LIB_CAT_META['autre'];
+            $days   = (int)$row['days_out'];
+            $overdue = ($row['due_date'] && $row['due_date'] < date('Y-m-d')) ? ' style="color:#c0392b;font-weight:600"' : '';
+            echo '<tr>';
+            echo '<td>' . $cat['emoji'] . ' ' . h($row['title']) . '</td>';
+            echo '<td>' . h($row['owner_name'] ?? '—') . '</td>';
+            echo '<td>' . fmtDate($row['loaned_at']) . '</td>';
+            echo '<td>' . ($days === 0 ? 'Auj.' : $days . ' j') . '</td>';
+            echo '<td' . $overdue . '>' . ($row['due_date'] ? fmtDate($row['due_date']) : '—') . '</td>';
+            echo '<td><form method="post" action="?action=library_return">' . csrfField();
+            echo '<input type="hidden" name="loan_id" value="' . (int)$row['loan_id'] . '">';
+            echo '<button type="submit" class="btn btn-ghost btn-sm">📤 Retourner</button></form></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table></div>';
+    }
+    echo '</div>';
+
+    // ── Mes activités (cartes avec intérêt marqué)
+    echo '<div class="section-box mt-2">';
+    echo '<div class="section-box-header"><h2>🌿 Activités qui m\'intéressent</h2>';
+    echo '<span class="text-sm text-muted">' . count($data['activities']) . ' activité' . (count($data['activities']) > 1 ? 's' : '') . '</span></div>';
+    if (empty($data['activities'])) {
+        echo '<div class="section-box-body"><p class="text-muted">Vous n\'avez marqué d\'intérêt pour aucune activité.</p></div>';
+    } else {
+        echo '<div style="overflow-x:auto"><table class="data-table">';
+        echo '<thead><tr><th>Activité</th><th>Tag</th><th>Statut</th><th>Date prévue</th><th>Intérêt total</th></tr></thead><tbody>';
+        foreach ($data['activities'] as $row) {
+            $tagLabel = TAG_META[$row['tag']] ?? ['label' => $row['tag'], 'cls' => 'tag-autre'];
+            $stMeta   = STATUS_META[$row['status']] ?? STATUS_META['a_planifier'];
+            echo '<tr>';
+            echo '<td><strong>' . h($row['title']) . '</strong></td>';
+            echo '<td><span class="tag ' . $tagLabel['cls'] . '">' . $tagLabel['label'] . '</span></td>';
+            echo '<td><span class="status-badge status-' . h($row['status']) . '">' . $stMeta['label'] . '</span></td>';
+            echo '<td>' . ($row['event_date'] ? fmtDate($row['event_date']) : '—') . '</td>';
+            echo '<td>' . (int)$row['interest_count'] . ' ✦</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table></div>';
+    }
+    echo '</div>';
+
+    // ── Mes présences (activités planifiées)
+    if (!empty($data['presences'])) {
+        echo '<div class="section-box mt-2">';
+        echo '<div class="section-box-header"><h2>📅 Mes présences confirmées</h2>';
+        echo '<span class="text-sm text-muted">' . count($data['presences']) . ' événement' . (count($data['presences']) > 1 ? 's' : '') . '</span></div>';
+        echo '<div style="overflow-x:auto"><table class="data-table">';
+        echo '<thead><tr><th>Activité</th><th>Date</th><th>Présence</th></tr></thead><tbody>';
+        foreach ($data['presences'] as $row) {
+            $attending = (int)$row['attending'];
+            $pLabel    = $attending === 1 ? '<span style="color:#155724">✓ Présent·e</span>' : '<span style="color:#721c24">✗ Absent·e</span>';
+            echo '<tr>';
+            echo '<td>' . h($row['title']) . '</td>';
+            echo '<td>' . ($row['event_date'] ? fmtDate($row['event_date']) : '—') . '</td>';
+            echo '<td>' . $pLabel . '</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table></div>';
+        echo '</div>';
+    }
+
+    // ── Mes cartes proposées
+    echo '<div class="section-box mt-2">';
+    echo '<div class="section-box-header"><h2>📌 Mes cartes proposées</h2>';
+    echo '<span class="text-sm text-muted">' . count($data['my_cards']) . ' carte' . (count($data['my_cards']) > 1 ? 's' : '') . '</span></div>';
+    if (empty($data['my_cards'])) {
+        echo '<div class="section-box-body"><p class="text-muted">Vous n\'avez proposé aucune activité.</p></div>';
+    } else {
+        echo '<div style="overflow-x:auto"><table class="data-table">';
+        echo '<thead><tr><th>Activité</th><th>Tag</th><th>Statut</th><th>Date prévue</th><th>Intérêt</th></tr></thead><tbody>';
+        foreach ($data['my_cards'] as $row) {
+            $tagLabel = TAG_META[$row['tag']] ?? ['label' => $row['tag'], 'cls' => 'tag-autre'];
+            $stMeta   = STATUS_META[$row['status']] ?? STATUS_META['a_planifier'];
+            echo '<tr>';
+            echo '<td><strong>' . h($row['title']) . '</strong></td>';
+            echo '<td><span class="tag ' . $tagLabel['cls'] . '">' . $tagLabel['label'] . '</span></td>';
+            echo '<td><span class="status-badge status-' . h($row['status']) . '">' . $stMeta['label'] . '</span></td>';
+            echo '<td>' . ($row['event_date'] ? fmtDate($row['event_date']) : '—') . '</td>';
+            echo '<td>' . (int)$row['interest_count'] . ' ✦</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table></div>';
+    }
+    echo '</div>';
+
+    echo '</div>';
+    layoutClose();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -897,7 +1998,9 @@ function viewMyData(array $user): void
     echo '<div class="section-box-body">';
 
     echo '<p class="text-sm text-muted mt-1">Cartes créées : <strong>' . count($data['cards']) . '</strong></p>';
-    echo '<p class="text-sm text-muted mt-1">Participations signalées : <strong>' . count($data['interests']) . '</strong></p>';
+    echo '<p class="text-sm text-muted mt-1">Intérêts exprimés : <strong>' . count($data['interests']) . '</strong></p>';
+    echo '<p class="text-sm text-muted mt-1">Votes de dates : <strong>' . count($data['date_poll_votes']) . '</strong></p>';
+    echo '<p class="text-sm text-muted mt-1">Confirmations de présence : <strong>' . count($data['presences']) . '</strong></p>';
     echo '<p class="text-sm text-muted mt-1">Emprunts : <strong>' . count($data['loans']) . '</strong></p>';
     echo '<p class="text-sm text-muted mt-1" style="margin-top:.75rem">Aucune donnée n\'est partagée avec des tiers. Les données sont stockées sur le serveur de ' . h(RGPD_RESPONSABLE) . '.</p>';
     echo '</div></div>';

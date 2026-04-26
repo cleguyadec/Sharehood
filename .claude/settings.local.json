@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -l /var/www/html/Sharehood/index.php)",
+      "Bash(php -l /var/www/html/Sharehood/functions.php)",
+      "Bash(php -r ' *)"
+    ]
+  }
+}

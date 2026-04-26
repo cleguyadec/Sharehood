@@ -407,26 +407,44 @@ nav {
 
 /* ── CARD ── */
 .card {
-  background: var(--bg); border: 1px solid var(--border);
-  border-radius: 8px; padding: .85rem 1rem;
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 1rem 1.1rem;
   animation: fadeIn .22s ease;
 }
-@keyframes fadeIn { from { opacity:0; transform: translateY(-5px); } to { opacity:1; transform:none; } }
-.card-title { font-family: 'Lora', serif; font-size: .95rem; font-weight: 600; line-height: 1.3; margin: .4rem 0 .3rem; }
-.card-body  { font-size: .83rem; color: var(--muted); line-height: 1.5; }
-.card-meta  { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .3rem; margin-top: .5rem; }
-.card-author { font-size: .75rem; color: var(--muted); font-weight: 500; }
-.card-date   { font-size: .72rem; color: var(--muted); }
-.card-actions { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .5rem; }
+@keyframes fadeIn { from { opacity:0; transform: translateY(-4px); } to { opacity:1; transform:none; } }
+.card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: .4rem; margin-bottom: .5rem; }
+.card-chips  { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; flex: 1; }
+.card-title  { font-family: 'Lora', serif; font-size: 1rem; font-weight: 600; line-height: 1.35; margin-bottom: .25rem; }
+.card-body   { font-size: .83rem; color: var(--muted); line-height: 1.55; margin-bottom: .25rem; }
+.card-meta   { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; margin-top: .3rem; }
+.card-author { font-size: .75rem; color: var(--muted); }
+.card-date   { font-size: .74rem; color: var(--muted); }
+.audience-chip { font-size: .7rem; color: var(--muted); }
+.card-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .3rem; margin-top: .65rem; }
+.card-divider { border: none; border-top: 1px solid var(--border); margin: .55rem 0 0; }
+
+/* ── BOUTON ICÔNE (supprimer) ── */
+.btn-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 5px; flex-shrink: 0;
+  border: 1px solid transparent; background: transparent; cursor: pointer;
+  color: var(--muted); font-size: .85rem; line-height: 1; transition: all .15s;
+}
+.btn-icon:hover { background: #fde8e8; color: #c0392b; border-color: #f5b7b1; }
+
+/* ── INTÉRÊT ── */
 .interest-btn {
   display: inline-flex; align-items: center; gap: .3rem;
   background: transparent; border: 1px solid var(--border);
   color: var(--muted); border-radius: 20px;
-  padding: .2rem .7rem; font-size: .78rem; cursor: pointer;
+  padding: .22rem .75rem; font-size: .8rem; cursor: pointer;
   font-family: 'DM Sans', sans-serif; transition: all .15s;
 }
 .interest-btn:hover { border-color: var(--col-1); color: var(--col-1); }
 .interest-btn.active { background: var(--col-1); border-color: var(--col-1); color: #fff; }
+
+/* ── FOCUS VISIBLE (accessibilité clavier) ── */
+:focus-visible { outline: 2.5px solid var(--col-1); outline-offset: 2px; border-radius: 3px; }
 
 /* ── TABLE ── */
 .data-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
@@ -467,6 +485,13 @@ nav {
 /* ── FOOTER ── */
 footer { text-align: center; padding: 1.25rem; color: var(--muted); font-size: .75rem; border-top: 1px solid var(--border); margin-top: 2rem; }
 
+/* ── ACCESSIBILITÉ ── */
+/* Classe pour les labels lisibles uniquement par les lecteurs d'écran */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
 /* ── MISC ── */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 @media (max-width: 600px) { .grid-2 { grid-template-columns: 1fr; } }
@@ -490,37 +515,54 @@ footer { text-align: center; padding: 1.25rem; color: var(--muted); font-size: .
 .status-annulee     { background: #f8d7da; color: #721c24; }
 .status-reportee    { background: #d1ecf1; color: #0c5460; }
 
+/* ── SECTION LABEL (quand ?, présences…) ── */
+.section-label {
+  display: block; font-size: .68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--muted); margin-bottom: .4rem;
+}
+
 /* ── SONDAGE DE DATES ── */
-.poll-section { margin-top: .6rem; border-top: 1px solid var(--border); padding-top: .55rem; }
-.poll-section-title { font-size: .7rem; font-weight: 600; text-transform: uppercase;
-  letter-spacing: .07em; color: var(--muted); margin-bottom: .4rem; }
-.poll-option { display: flex; align-items: center; gap: .35rem; padding: .2rem 0; flex-wrap: wrap; }
-.poll-date-label { font-size: .84rem; font-weight: 500; flex: 1; min-width: 90px; }
-.poll-vote-count { font-size: .74rem; color: var(--muted); white-space: nowrap; cursor: default; }
+.poll-section { margin-top: .55rem; padding-top: .5rem; border-top: 1px solid var(--border); }
+.poll-option { display: flex; align-items: center; gap: .35rem; padding: .15rem 0; }
+.poll-date-label { font-size: .85rem; font-weight: 500; flex: 1; min-width: 80px; }
+.poll-vote-count { font-size: .72rem; color: var(--muted); white-space: nowrap; cursor: default; min-width: 48px; text-align: right; }
 .poll-vote-btn {
   display: inline-flex; align-items: center; gap: .2rem;
-  padding: .13rem .45rem; font-size: .74rem; border-radius: 4px;
+  padding: .14rem .5rem; font-size: .76rem; border-radius: 4px;
   border: 1px solid var(--border); background: var(--bg); cursor: pointer;
   font-family: 'DM Sans', sans-serif; transition: all .15s;
 }
 .poll-vote-btn:hover { border-color: var(--col-1); color: var(--col-1); }
 .poll-vote-btn.voted { background: var(--col-1); border-color: var(--col-1); color: #fff; }
-.poll-add-row { display: flex; gap: .3rem; margin-top: .45rem; flex-wrap: wrap; align-items: center; }
-.poll-admin-row { margin-top: .5rem; padding-top: .45rem; border-top: 1px dashed var(--border);
-  display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; }
-.poll-del-btn { padding: .1rem .35rem; font-size: .68rem; line-height: 1;
+.poll-add-row { display: flex; gap: .3rem; margin-top: .4rem; flex-wrap: wrap; align-items: center; }
+.poll-del-btn { padding: .1rem .3rem; font-size: .65rem; line-height: 1;
   color: var(--muted); border: 1px solid var(--border); border-radius: 4px;
-  background: transparent; cursor: pointer; }
+  background: transparent; cursor: pointer; flex-shrink: 0; }
 .poll-del-btn:hover { color: #c0392b; border-color: #f5b7b1; }
 
+/* ── GESTION ADMIN (details/summary) ── */
+.card-manage { margin-top: .45rem; }
+.card-manage > summary {
+  font-size: .76rem; color: var(--muted); cursor: pointer;
+  list-style: none; display: inline-flex; align-items: center; gap: .25rem;
+  padding: .2rem .45rem; border-radius: 5px; border: 1px solid var(--border);
+  background: var(--bg); font-family: 'DM Sans', sans-serif; transition: all .15s;
+  user-select: none;
+}
+.card-manage > summary::-webkit-details-marker { display: none; }
+.card-manage > summary::before { content: '▸'; display: inline-block; transition: transform .15s; }
+.card-manage[open] > summary::before { transform: rotate(90deg); }
+.card-manage > summary:hover { color: var(--text); border-color: var(--col-1); }
+.card-manage-body { display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; padding-top: .5rem; }
+
 /* ── PRÉSENCES ── */
-.presence-section { margin-top: .6rem; border-top: 1px solid var(--border); padding-top: .55rem; }
-.presence-btns { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .4rem; }
+.presence-section { margin-top: .55rem; padding-top: .5rem; border-top: 1px solid var(--border); }
+.presence-btns { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .35rem; }
 .presence-btn {
-  display: inline-flex; align-items: center; gap: .25rem;
-  padding: .22rem .6rem; border-radius: 20px; font-size: .78rem;
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .28rem .8rem; border-radius: 20px; font-size: .82rem;
   border: 1px solid var(--border); background: var(--bg); cursor: pointer;
-  font-family: 'DM Sans', sans-serif; transition: all .15s;
+  font-family: 'DM Sans', sans-serif; font-weight: 500; transition: all .15s;
 }
 .presence-btn:hover { opacity: .8; }
 .presence-btn.will-be { background: #d4edda; color: #155724; border-color: #c3e6cb; }
@@ -896,9 +938,12 @@ HTML;
     echo <<<'JS'
 <script>
 /* ── Utilitaires ── */
-function toggleEl(id) {
+function toggleEl(id, btn) {
   const el = document.getElementById(id);
-  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  if (!el) return;
+  const isHidden = el.style.display === 'none' || el.style.display === '';
+  el.style.display = isHidden ? 'block' : 'none';
+  if (btn) btn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
 }
 
 /* ── Filtres tableau ── */
@@ -1014,7 +1059,7 @@ function renderCard(array $card, array $user, int $colId, array $comments = []):
     $tag        = TAG_META[$card['tag']] ?? TAG_META['autre'];
     $status     = $card['status'] ?? 'idea';
     $canAct     = ($card['author_id'] == $user['id']) || ($user['role'] === 'admin');
-    $authorName = $card['author_name'] ? '— ' . h($card['author_name']) : '— anonyme';
+    $authorName = $card['author_name'] ? h($card['author_name']) : 'anonyme';
     $audience   = AUDIENCE_META[$card['audience']] ?? '';
 
     $interests  = getCardInterests($cardId);
@@ -1028,92 +1073,102 @@ function renderCard(array $card, array $user, int $colId, array $comments = []):
     }
     $intCount = count($interests);
 
-    echo '<div class="card" data-id="' . $cardId . '" data-title="' . h($card['title']) . '" data-body="' . h($card['body'] ?? '') . '" data-tag="' . h($card['tag']) . '" data-audience="' . h($card['audience'] ?? '') . '">';
+    echo '<div class="card" data-id="' . $cardId . '" data-title="' . h(mb_strtolower($card['title'])) . '" data-body="' . h(mb_strtolower($card['body'] ?? '')) . '" data-tag="' . h($card['tag']) . '" data-audience="' . h($card['audience'] ?? '') . '">';
 
-    // Tag + badge statut (col 1)
-    echo '<div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.1rem">';
+    // ── En-tête : tag + statut + public · bouton supprimer (à droite)
+    echo '<div class="card-header">';
+    echo '<div class="card-chips">';
     echo '<span class="tag ' . $tag['cls'] . '">' . $tag['emoji'] . ' ' . h($tag['label']) . '</span>';
     if ($colId === 1) {
         $sm = STATUS_META[$status] ?? STATUS_META['a_planifier'];
         echo '<span class="status-badge status-' . h($status) . '">' . $sm['label'] . '</span>';
     }
+    if ($audience) {
+        echo '<span class="audience-chip">' . $audience . '</span>';
+    }
     echo '</div>';
+    if ($canAct) {
+        echo '<form method="post" action="?action=card_delete" style="display:inline">';
+        echo csrfField();
+        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+        echo '<button type="submit" class="btn-icon" title="Supprimer la carte" aria-label="Supprimer la carte" onclick="return confirm(\'Supprimer cette carte ?\')">✕</button>';
+        echo '</form>';
+    }
+    echo '</div>'; // .card-header
 
-    echo '<div class="card-title">' . h($card['title']) . '</div>';
+    // ── Titre et description
+    echo '<h3 class="card-title">' . h($card['title']) . '</h3>';
     if ($card['body']) {
-        echo '<div class="card-body">' . nl2br(h($card['body'])) . '</div>';
+        echo '<p class="card-body">' . nl2br(h($card['body'])) . '</p>';
     }
 
-    // Méta auteur / audience / date confirmée
-    $dateStr = ($card['event_date'] && $status === 'planifiee') ? '📅 ' . fmtDate($card['event_date']) : '';
+    // ── Méta : auteur · date (planifiée)
+    $dateStr = ($card['event_date'] && $status === 'planifiee') ? fmtDate($card['event_date']) : '';
     echo '<div class="card-meta">';
-    echo '<span class="card-author">' . $authorName . '</span>';
-    echo '<span class="card-date">' . $audience . ($audience && $dateStr ? ' · ' : '') . $dateStr . '</span>';
+    echo '<span class="card-author">— ' . $authorName . '</span>';
+    if ($dateStr) {
+        echo '<time class="card-date" datetime="' . h($card['event_date'] ?? '') . '">📅 ' . $dateStr . '</time>';
+    }
     echo '</div>';
 
-    // Intérêts — bouton interactif col 0, lecture seule col 1 & 2
+    // ── Pied : intérêt (gauche) · bouton avancer (droite)
+    echo '<div class="card-footer">';
+
     if ($colId === 0) {
+        // Bouton interactif d'intérêt
         $btnLabel  = $myInterest
             ? ($intCount > 1 ? '✋ Toi + ' . ($intCount - 1) . ' autre' . ($intCount > 2 ? 's' : '') : '✋ Tu es partant·e')
-            : ($intCount > 0  ? '✋ ' . $intCount . ' partant' . ($intCount > 1 ? 's' : '') : '✋ Je veux participer');
+            : ($intCount > 0 ? '✋ ' . $intCount . ' partant' . ($intCount > 1 ? 's' : '') : '✋ Je suis partant·e');
         $intActive = $myInterest ? 'active' : '';
         $intTip    = $intNames   ? 'title="' . implode(', ', $intNames) . '"' : '';
-        echo '<div class="card-actions">';
         echo '<form method="post" action="?action=interest_toggle" style="display:inline">';
         echo csrfField();
         echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
-        echo '<button type="submit" class="interest-btn ' . $intActive . '" ' . $intTip . '>' . $btnLabel . '</button>';
+        echo '<button type="submit" class="interest-btn ' . $intActive . '" ' . $intTip . ' aria-pressed="' . ($myInterest ? 'true' : 'false') . '">' . $btnLabel . '</button>';
         echo '</form>';
     } else {
-        // Affichage lecture-seule des intérêts sur cols 1 & 2
+        // Lecture seule (cols 1 & 2)
         if ($intCount > 0) {
             $tip = 'title="Intéressé·es : ' . implode(', ', $intNames) . '"';
             $txt = $myInterest
                 ? ($intCount > 1 ? '✋ Toi + ' . ($intCount - 1) . ' intéressé' . ($intCount > 2 ? 's' : '') : '✋ Tu étais intéressé·e')
                 : '✋ ' . $intCount . ' intéressé' . ($intCount > 1 ? 's' : '');
-            echo '<div class="voters-row" ' . $tip . '>' . $txt . '</div>';
+            echo '<span class="voters-row" ' . $tip . '>' . $txt . '</span>';
+        } else {
+            echo '<span></span>';
         }
-        echo '<div class="card-actions">';
     }
 
-    // Bouton avancer
+    // Bouton avancer (Planifier / Archiver)
     if ($canAct && $colId < 2) {
-        $nextCol  = $colId + 1;
-        $nextIcon = $nextCol === 1 ? '📅 Planifier' : '✅ Archiver';
+        $nextCol   = $colId + 1;
+        $nextLabel = $nextCol === 1 ? '📅 Planifier' : '✅ Archiver';
+        $ariaLbl   = $nextCol === 1 ? 'Passer en planification' : 'Archiver cet événement';
         echo '<form method="post" action="?action=card_move" style="display:inline">';
         echo csrfField();
         echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
         echo '<input type="hidden" name="to_col"  value="' . $nextCol . '">';
-        echo '<button type="submit" class="btn btn-ghost btn-sm">' . $nextIcon . '</button>';
+        echo '<button type="submit" class="btn btn-ghost btn-sm" aria-label="' . $ariaLbl . '">' . $nextLabel . '</button>';
         echo '</form>';
     }
 
-    // Supprimer
-    if ($canAct) {
-        echo '<form method="post" action="?action=card_delete" style="display:inline;margin-left:auto">';
-        echo csrfField();
-        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
-        echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#f5b7b1" ';
-        echo 'onclick="return confirm(\'Supprimer cette carte ?\')">✕</button>';
-        echo '</form>';
-    }
+    echo '</div>'; // .card-footer
 
-    echo '</div>'; // .card-actions
-
-    // Col 1 : sondage ou présences
+    // ── Section planification (col 1 uniquement)
     if ($colId === 1) {
         renderPlanningSection($card, $user, $cardId, $status, $canAct);
     }
 
-    // Section commentaires (toutes colonnes)
+    // ── Section commentaires
     $commentCount = count($comments);
     $hasCls       = $commentCount > 0 ? ' has' : '';
     $cSectionId   = 'cmts-' . $cardId;
-    echo '<div style="margin-top:.4rem">';
-    echo '<button type="button" class="comment-toggle' . $hasCls . '" onclick="toggleEl(\'' . $cSectionId . '\')">';
-    echo '💬' . ($commentCount > 0 ? ' ' . $commentCount : '') . '</button>';
-    echo '</div>';
-    echo '<div id="' . $cSectionId . '" class="comment-section" style="display:none">';
+    $cmtLabel     = $commentCount > 0 ? 'Commentaires (' . $commentCount . ')' : 'Commenter';
+    echo '<hr class="card-divider" aria-hidden="true">';
+    echo '<button type="button" class="comment-toggle' . $hasCls . '" ';
+    echo 'onclick="toggleEl(\'' . $cSectionId . '\', this)" aria-expanded="false" aria-controls="' . $cSectionId . '">💬 ' . $cmtLabel . '</button>';
+
+    echo '<div id="' . $cSectionId . '" class="comment-section" style="display:none" role="region" aria-label="Commentaires">';
     foreach ($comments as $cmt) {
         $canDelCmt = ($cmt['user_id'] == $user['id']) || ($user['role'] === 'admin');
         echo '<div class="comment-item">';
@@ -1124,17 +1179,18 @@ function renderCard(array $card, array $user, int $colId, array $comments = []):
             echo '<form method="post" action="?action=comment_delete" style="display:inline;margin-left:auto">';
             echo csrfField();
             echo '<input type="hidden" name="comment_id" value="' . (int)$cmt['id'] . '">';
-            echo '<button type="submit" class="poll-del-btn" title="Supprimer">✕</button>';
+            echo '<button type="submit" class="poll-del-btn" aria-label="Supprimer ce commentaire" title="Supprimer">✕</button>';
             echo '</form>';
         }
         echo '</div>';
         echo '<div class="comment-body">' . nl2br(h($cmt['body'])) . '</div>';
         echo '</div>';
     }
-    echo '<form method="post" action="?action=comment_add" style="margin-top:.45rem;display:flex;gap:.3rem;flex-wrap:wrap">';
+    echo '<form method="post" action="?action=comment_add" style="margin-top:.5rem;display:flex;gap:.3rem;flex-wrap:wrap">';
     echo csrfField();
     echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
-    echo '<textarea name="body" rows="2" placeholder="Ajouter un commentaire…" style="flex:1;min-width:120px;font-size:.82rem;padding:.35rem .55rem;border:1px solid var(--border);border-radius:5px;background:var(--bg);resize:vertical;font-family:\'DM Sans\',sans-serif"></textarea>';
+    echo '<label for="cmt-body-' . $cardId . '" class="sr-only">Votre commentaire</label>';
+    echo '<textarea id="cmt-body-' . $cardId . '" name="body" rows="2" placeholder="Votre commentaire…" style="flex:1;min-width:120px;font-size:.82rem;padding:.4rem .55rem;border:1px solid var(--border);border-radius:5px;background:var(--bg);resize:vertical;font-family:\'DM Sans\',sans-serif"></textarea>';
     echo '<button type="submit" class="btn btn-ghost btn-sm" style="align-self:flex-end">Envoyer</button>';
     echo '</form>';
     echo '</div>'; // .comment-section
@@ -1144,17 +1200,19 @@ function renderCard(array $card, array $user, int $colId, array $comments = []):
 
 function renderPlanningSection(array $card, array $user, int $cardId, string $status, bool $canAct): void
 {
+    // Annulée / Reportée : seul l'admin voit le bouton réactiver
     if ($status === 'annulee' || $status === 'reportee') {
         if ($canAct) {
             $lbl = $status === 'annulee' ? '❌ Annulée' : '⏸ Reportée';
-            echo '<div class="poll-section"><div class="poll-admin-row">';
-            echo '<span class="text-sm text-muted">' . $lbl . ' —</span>';
-            echo '<form method="post" action="?action=card_status_update" style="display:inline">';
+            echo '<div class="poll-section">';
+            echo '<p class="text-sm text-muted" style="margin-bottom:.4rem">' . $lbl . '</p>';
+            echo '<form method="post" action="?action=card_status_update">';
             echo csrfField();
             echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
             echo '<input type="hidden" name="status"  value="a_planifier">';
             echo '<button type="submit" class="btn btn-ghost btn-sm">↺ Réactiver</button>';
-            echo '</form></div></div>';
+            echo '</form>';
+            echo '</div>';
         }
         return;
     }
@@ -1164,14 +1222,14 @@ function renderPlanningSection(array $card, array $user, int $cardId, string $st
         return;
     }
 
-    // a_planifier (ou 'idea' hérité)
+    // ── État a_planifier : sondage de dates
     $polls = getDatePolls($cardId);
 
     echo '<div class="poll-section">';
-    echo '<div class="poll-section-title">📊 Sondage de dates</div>';
+    echo '<span class="section-label">Quand ?</span>';
 
     if (empty($polls)) {
-        echo '<p class="text-sm text-muted" style="margin-bottom:.35rem">Aucune date proposée.</p>';
+        echo '<p class="text-sm text-muted" style="margin-bottom:.35rem">Aucune date proposée pour l\'instant.</p>';
     }
 
     foreach ($polls as $poll) {
@@ -1193,7 +1251,7 @@ function renderPlanningSection(array $card, array $user, int $cardId, string $st
         echo '<div class="poll-option">';
         echo '<span class="poll-date-label">' . fmtDate($poll['proposed_date']) . '</span>';
 
-        $vcTip = $voteNames ? 'title="' . implode(', ', $voteNames) . '"' : '';
+        $vcTip = $voteNames ? 'title="Votes : ' . implode(', ', $voteNames) . '"' : '';
         echo '<span class="poll-vote-count" ' . $vcTip . '>' . $voteCount . ' vote' . ($voteCount > 1 ? 's' : '') . '</span>';
 
         $voteActive = $myVote ? 'voted' : '';
@@ -1201,33 +1259,33 @@ function renderPlanningSection(array $card, array $user, int $cardId, string $st
         echo '<form method="post" action="?action=date_poll_vote" style="display:inline">';
         echo csrfField();
         echo '<input type="hidden" name="poll_id" value="' . $pollId . '">';
-        echo '<button type="submit" class="poll-vote-btn ' . $voteActive . '">' . $voteLabel . '</button>';
+        echo '<button type="submit" class="poll-vote-btn ' . $voteActive . '" aria-pressed="' . ($myVote ? 'true' : 'false') . '">' . $voteLabel . '</button>';
         echo '</form>';
 
         if ($canDelPoll) {
             echo '<form method="post" action="?action=date_poll_delete" style="display:inline">';
             echo csrfField();
             echo '<input type="hidden" name="poll_id" value="' . $pollId . '">';
-            echo '<button type="submit" class="poll-del-btn" title="Supprimer cette option">✕</button>';
+            echo '<button type="submit" class="poll-del-btn" aria-label="Supprimer cette date" title="Retirer cette date">✕</button>';
             echo '</form>';
         }
 
         echo '</div>'; // .poll-option
     }
 
-    // Proposer une date (tout membre)
+    // ── Proposer une date (tous les membres)
     echo '<div class="poll-add-row">';
     echo '<form method="post" action="?action=date_poll_add" style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">';
     echo csrfField();
     echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
-    echo '<input type="date" name="proposed_date" required style="font-size:.8rem;padding:.25rem .5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg)">';
-    echo '<button type="submit" class="btn btn-ghost btn-sm">+ Proposer une date</button>';
+    echo '<label for="date-prop-' . $cardId . '" class="sr-only">Proposer une date</label>';
+    echo '<input type="date" id="date-prop-' . $cardId . '" name="proposed_date" required style="font-size:.82rem;padding:.28rem .5rem;border:1px solid var(--border);border-radius:5px;background:var(--bg)">';
+    echo '<button type="submit" class="btn btn-ghost btn-sm">+ Proposer</button>';
     echo '</form>';
     echo '</div>';
 
-    // Admin / auteur : confirmer la date + changer statut
+    // ── Admin / auteur : confirmer la date et gérer le statut (dans <details>)
     if ($canAct) {
-        // Pré-remplir avec la date la plus votée
         $bestDate = '';
         if (!empty($polls)) {
             $sorted = $polls;
@@ -1235,29 +1293,34 @@ function renderPlanningSection(array $card, array $user, int $cardId, string $st
             $bestDate = $sorted[0]['proposed_date'];
         }
 
-        echo '<div class="poll-admin-row">';
+        echo '<details class="card-manage">';
+        echo '<summary>Gérer l\'événement</summary>';
+        echo '<div class="card-manage-body">';
+
         echo '<form method="post" action="?action=card_confirm_date" style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">';
         echo csrfField();
         echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
-        echo '<input type="date" name="event_date" required value="' . h($bestDate) . '" style="font-size:.8rem;padding:.25rem .5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg)">';
-        echo '<button type="submit" class="btn btn-primary btn-sm">✓ Confirmer</button>';
-        echo '</form>';
-
-        echo '<form method="post" action="?action=card_status_update" style="display:inline">';
-        echo csrfField();
-        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
-        echo '<input type="hidden" name="status"  value="annulee">';
-        echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#f5b7b1">Annuler</button>';
+        echo '<label for="evt-date-' . $cardId . '" class="sr-only">Date de l\'événement</label>';
+        echo '<input type="date" id="evt-date-' . $cardId . '" name="event_date" required value="' . h($bestDate) . '" style="font-size:.82rem;padding:.28rem .5rem;border:1px solid var(--border);border-radius:5px;background:var(--bg)">';
+        echo '<button type="submit" class="btn btn-primary btn-sm">✓ Confirmer la date</button>';
         echo '</form>';
 
         echo '<form method="post" action="?action=card_status_update" style="display:inline">';
         echo csrfField();
         echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
         echo '<input type="hidden" name="status"  value="reportee">';
-        echo '<button type="submit" class="btn btn-ghost btn-sm">Reporter</button>';
+        echo '<button type="submit" class="btn btn-ghost btn-sm">⏸ Reporter</button>';
         echo '</form>';
 
-        echo '</div>'; // .poll-admin-row
+        echo '<form method="post" action="?action=card_status_update" style="display:inline">';
+        echo csrfField();
+        echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
+        echo '<input type="hidden" name="status"  value="annulee">';
+        echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#f5b7b1" onclick="return confirm(\'Annuler définitivement cet événement ?\')">✕ Annuler</button>';
+        echo '</form>';
+
+        echo '</div>';
+        echo '</details>';
     }
 
     echo '</div>'; // .poll-section
@@ -1282,7 +1345,7 @@ function renderPresenceSection(array $card, array $user, int $cardId, bool $canA
     }
 
     echo '<div class="presence-section">';
-    echo '<div class="poll-section-title">👥 Présences</div>';
+    echo '<span class="section-label">Votre présence</span>';
 
     echo '<div class="presence-btns">';
 
@@ -1291,7 +1354,7 @@ function renderPresenceSection(array $card, array $user, int $cardId, bool $canA
     echo csrfField();
     echo '<input type="hidden" name="card_id"  value="' . $cardId . '">';
     echo '<input type="hidden" name="attending" value="1">';
-    echo '<button type="submit" class="presence-btn' . $willClass . '">✅ Je serai là</button>';
+    echo '<button type="submit" class="presence-btn' . $willClass . '" aria-pressed="' . ($myAttending === 1 ? 'true' : 'false') . '">✅ Je serai là</button>';
     echo '</form>';
 
     $wontClass = $myAttending === 0 ? ' wont-be' : '';
@@ -1299,51 +1362,58 @@ function renderPresenceSection(array $card, array $user, int $cardId, bool $canA
     echo csrfField();
     echo '<input type="hidden" name="card_id"  value="' . $cardId . '">';
     echo '<input type="hidden" name="attending" value="0">';
-    echo '<button type="submit" class="presence-btn' . $wontClass . '">😕 Je ne pourrai pas</button>';
+    echo '<button type="submit" class="presence-btn' . $wontClass . '" aria-pressed="' . ($myAttending === 0 ? 'true' : 'false') . '">😕 Je ne pourrai pas</button>';
     echo '</form>';
 
     echo '</div>'; // .presence-btns
 
+    // Récapitulatif des présences
     if (!empty($attending)) {
         $tip = 'title="' . implode(', ', $attending) . '"';
-        echo '<div class="presence-list" ' . $tip . '>';
-        echo '✅ ' . count($attending) . ' présent' . (count($attending) > 1 ? 's' : '') . ' : ' . implode(', ', $attending);
+        echo '<div class="presence-list" ' . $tip . ' aria-label="Présent·es">';
+        echo '✅ ' . implode(', ', $attending);
         echo '</div>';
     }
     if (!empty($declining)) {
         $tip = 'title="' . implode(', ', $declining) . '"';
-        echo '<div class="presence-list" ' . $tip . '>';
-        echo '😕 ' . count($declining) . ' absent' . (count($declining) > 1 ? 's' : '') . ' : ' . implode(', ', $declining);
+        echo '<div class="presence-list" ' . $tip . ' aria-label="Absent·es">';
+        echo '😕 ' . implode(', ', $declining);
         echo '</div>';
     }
     if (empty($presences)) {
-        echo '<p class="text-sm text-muted">Personne n\'a encore confirmé.</p>';
+        echo '<p class="text-sm text-muted" style="margin-top:.2rem">Personne n\'a encore répondu.</p>';
     }
 
+    // ── Gérer la date et le statut (admin/auteur uniquement, dans <details>)
     if ($canAct) {
-        echo '<div class="poll-admin-row">';
+        echo '<details class="card-manage">';
+        echo '<summary>Gérer l\'événement</summary>';
+        echo '<div class="card-manage-body">';
+
         echo '<form method="post" action="?action=card_confirm_date" style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">';
         echo csrfField();
         echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
-        echo '<input type="date" name="event_date" value="' . h($card['event_date'] ?? '') . '" style="font-size:.8rem;padding:.25rem .5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg)">';
+        echo '<label for="evt-mod-' . $cardId . '" class="sr-only">Modifier la date</label>';
+        echo '<input type="date" id="evt-mod-' . $cardId . '" name="event_date" value="' . h($card['event_date'] ?? '') . '" style="font-size:.82rem;padding:.28rem .5rem;border:1px solid var(--border);border-radius:5px;background:var(--bg)">';
         echo '<button type="submit" class="btn btn-ghost btn-sm">✎ Modifier la date</button>';
         echo '</form>';
 
         echo '<form method="post" action="?action=card_status_update" style="display:inline">';
         echo csrfField();
         echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
-        echo '<input type="hidden" name="status"  value="annulee">';
-        echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#f5b7b1">Annuler</button>';
+        echo '<input type="hidden" name="status"  value="reportee">';
+        echo '<button type="submit" class="btn btn-ghost btn-sm">⏸ Reporter</button>';
         echo '</form>';
 
         echo '<form method="post" action="?action=card_status_update" style="display:inline">';
         echo csrfField();
         echo '<input type="hidden" name="card_id" value="' . $cardId . '">';
-        echo '<input type="hidden" name="status"  value="reportee">';
-        echo '<button type="submit" class="btn btn-ghost btn-sm">Reporter</button>';
+        echo '<input type="hidden" name="status"  value="annulee">';
+        echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#f5b7b1" onclick="return confirm(\'Annuler cet événement ?\')">✕ Annuler</button>';
         echo '</form>';
 
         echo '</div>';
+        echo '</details>';
     }
 
     echo '</div>'; // .presence-section

@@ -146,6 +146,16 @@ function initDB(): void
             identifier   TEXT NOT NULL,
             attempted_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        -- Tokens de réinitialisation de mot de passe
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token_hash TEXT    NOT NULL,
+            created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+            expires_at TEXT    NOT NULL,
+            used_at    TEXT
+        );
     ");
 }
 
@@ -344,6 +354,91 @@ function changePassword(array $user, string $old, string $new): string
     getDB()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
            ->execute([$hash, $user['id']]);
     return '';
+}
+
+// ──────────────────────────────────────────────
+//  RÉINITIALISATION DE MOT DE PASSE
+// ──────────────────────────────────────────────
+
+function adminResetPassword(int $userId, string $newPassword): string
+{
+    if ($userId <= 0) return 'Utilisateur introuvable.';
+    if (strlen($newPassword) < 8) return 'Nouveau mot de passe : 8 caractères minimum.';
+    $hash = password_hash($newPassword, PASSWORD_BCRYPT, ['cost' => 12]);
+    getDB()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([$hash, $userId]);
+    return '';
+}
+
+function createPasswordResetToken(string $displayName): string
+{
+    $db   = getDB();
+    $stmt = $db->prepare('SELECT id FROM users WHERE display_name = ? AND is_active = 1');
+    $stmt->execute([$displayName]);
+    $row = $stmt->fetch();
+    if (!$row) return '';
+    $db->prepare('DELETE FROM password_reset_tokens WHERE user_id = ?')->execute([$row['id']]);
+    $token   = bin2hex(random_bytes(32));
+    $expires = date('Y-m-d H:i:s', time() + 3600);
+    $db->prepare('INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)')
+       ->execute([$row['id'], $token, $expires]);
+    return $token;
+}
+
+function adminGenerateResetToken(int $userId): string
+{
+    $db   = getDB();
+    $stmt = $db->prepare('SELECT id FROM users WHERE id = ? AND is_active = 1');
+    $stmt->execute([$userId]);
+    if (!$stmt->fetch()) return '';
+    $db->prepare('DELETE FROM password_reset_tokens WHERE user_id = ?')->execute([$userId]);
+    $token   = bin2hex(random_bytes(32));
+    $expires = date('Y-m-d H:i:s', time() + 3600);
+    $db->prepare('INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)')
+       ->execute([$userId, $token, $expires]);
+    return $token;
+}
+
+function validatePasswordResetToken(string $token): ?array
+{
+    if (strlen($token) !== 64) return null;
+    $stmt = getDB()->prepare("
+        SELECT t.id, t.user_id, u.display_name
+        FROM   password_reset_tokens t
+        JOIN   users u ON t.user_id = u.id
+        WHERE  t.token_hash = ? AND t.used_at IS NULL AND t.expires_at > datetime('now')
+    ");
+    $stmt->execute([$token]);
+    return $stmt->fetch() ?: null;
+}
+
+function consumePasswordResetToken(string $token, string $newPassword): string
+{
+    if (strlen($newPassword) < 8) return 'Nouveau mot de passe : 8 caractères minimum.';
+    $row = validatePasswordResetToken($token);
+    if (!$row) return 'Ce lien est invalide ou expiré.';
+    $db = getDB();
+    $db->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+       ->execute([password_hash($newPassword, PASSWORD_BCRYPT, ['cost' => 12]), $row['user_id']]);
+    $db->prepare("UPDATE password_reset_tokens SET used_at = datetime('now') WHERE token_hash = ?")
+       ->execute([$token]);
+    return '';
+}
+
+function getPendingResetRequests(): array
+{
+    $stmt = getDB()->query("
+        SELECT t.user_id, t.token_hash AS token, t.created_at, t.expires_at, u.display_name
+        FROM   password_reset_tokens t
+        JOIN   users u ON t.user_id = u.id
+        WHERE  t.used_at IS NULL AND t.expires_at > datetime('now')
+        ORDER  BY t.created_at DESC
+    ");
+    return $stmt->fetchAll();
+}
+
+function cleanExpiredResetTokens(): void
+{
+    getDB()->exec("DELETE FROM password_reset_tokens WHERE expires_at <= datetime('now') OR used_at IS NOT NULL");
 }
 
 // ──────────────────────────────────────────────

@@ -5,7 +5,13 @@
       "Bash(php -l /var/www/html/Sharehood/functions.php)",
       "Bash(php -r ' *)",
       "Bash(sudo tee *)",
-      "Bash(php -l /var/www/html/Sharehood/install.php)"
+      "Bash(php -l /var/www/html/Sharehood/install.php)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost/Sharehood/?action=forgot_password\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost/Sharehood/?action=reset_password&token=invalid\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost/Sharehood/?action=login\")",
+      "Bash(curl -s \"http://localhost/Sharehood/?action=forgot_password\")",
+      "Bash(curl -s \"http://localhost/Sharehood/?action=reset_password&token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")",
+      "Bash(curl -s \"http://localhost/Sharehood/?action=login\")"
     ]
   }
 }

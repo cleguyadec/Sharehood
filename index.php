@@ -219,6 +219,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             deleteAccount((int)($_POST['user_id'] ?? 0));
             flash('success', 'Compte supprimé et données anonymisées.');
             redirect('?action=admin');
+
+        case 'admin_reset_password':
+            requireAdmin();
+            $err = adminResetPassword((int)($_POST['user_id'] ?? 0), $_POST['new_password'] ?? '');
+            if ($err) {
+                flash('error', $err);
+            } else {
+                flash('success', 'Mot de passe réinitialisé avec succès.');
+            }
+            redirect('?action=admin');
+
+        case 'admin_generate_reset':
+            requireAdmin();
+            $tok = adminGenerateResetToken((int)($_POST['user_id'] ?? 0));
+            if ($tok) {
+                $baseUrl = (isset($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST']
+                         . strtok($_SERVER['REQUEST_URI'], '?');
+                flash('success', 'reset_url:' . $baseUrl . '?action=reset_password&token=' . $tok);
+            } else {
+                flash('error', 'Impossible de générer le lien (utilisateur introuvable ou inactif).');
+            }
+            redirect('?action=admin');
+
+        case 'forgot_password':
+            $token = createPasswordResetToken(trim($_POST['display_name'] ?? ''));
+            flash('success', 'Demande enregistrée. Contactez un administrateur pour recevoir votre lien de réinitialisation.');
+            redirect('?action=forgot_password');
+
+        case 'reset_password':
+            $err = consumePasswordResetToken($_POST['token'] ?? '', $_POST['new_password'] ?? '');
+            if ($err) {
+                flash('error', $err);
+                redirect('?action=reset_password&token=' . urlencode($_POST['token'] ?? ''));
+            }
+            flash('success', 'Mot de passe modifié. Vous pouvez maintenant vous connecter.');
+            redirect('?action=login');
     }
 }
 
@@ -226,8 +262,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 //  GET — dispatch vers les vues
 // ───────────────────────────────────────────────────────────
 
-if (in_array($action, ['login', 'register', 'privacy'], true)) {
-    if ($user && $action !== 'privacy') {
+if (in_array($action, ['login', 'register', 'privacy', 'forgot_password', 'reset_password'], true)) {
+    if ($user && $action === 'login') {
         redirect('?action=board');
     }
 } else {
@@ -235,15 +271,17 @@ if (in_array($action, ['login', 'register', 'privacy'], true)) {
 }
 
 switch ($action) {
-    case 'login':    viewLogin();           break;
-    case 'register': viewRegister();        break;
-    case 'privacy':  viewPrivacy();         break;
-    case 'board':     viewBoard($user);      break;
-    case 'library':   viewLibrary($user);   break;
-    case 'dashboard': viewDashboard($user); break;
-    case 'my_data':   viewMyData($user);    break;
-    case 'admin':     viewAdmin($user);     break;
-    default:          redirect('?action=board');
+    case 'login':          viewLogin();                                  break;
+    case 'register':       viewRegister();                               break;
+    case 'privacy':        viewPrivacy();                                break;
+    case 'forgot_password': viewForgotPassword();                        break;
+    case 'reset_password':  viewResetPassword($_GET['token'] ?? '');     break;
+    case 'board':          viewBoard($user);                             break;
+    case 'library':        viewLibrary($user);                          break;
+    case 'dashboard':      viewDashboard($user);                        break;
+    case 'my_data':        viewMyData($user);                           break;
+    case 'admin':          viewAdmin($user);                            break;
+    default:               redirect('?action=board');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -782,6 +820,9 @@ HTML;
   <button type="submit" class="btn btn-primary w-full">Se connecter</button>
   <p class="text-sm text-muted" style="text-align:center">
     Pas encore de compte ? <a href="?action=register">Créer un compte</a>
+  </p>
+  <p class="text-sm text-muted" style="text-align:center">
+    <a href="?action=forgot_password">Mot de passe oublié ?</a>
   </p>
 </form>
 </div>
@@ -2151,21 +2192,141 @@ function viewMyData(array $user): void
 }
 
 // ═══════════════════════════════════════════════════════════
+//  VUE — MOT DE PASSE OUBLIÉ
+// ═══════════════════════════════════════════════════════════
+
+function viewForgotPassword(): void
+{
+    layoutOpen('Mot de passe oublié');
+    $err = flash('error');
+    $ok  = flash('success');
+
+    echo '<div class="auth-wrap">';
+    echo '<div><h1 style="font-family:\'Lora\',serif;font-size:1.8rem;text-align:center">🌿 ' . h(APP_NAME) . '</h1>';
+    echo '<p style="text-align:center;color:var(--muted);margin-top:.4rem">' . h(APP_SUBTITLE) . '</p></div>';
+
+    if ($err) echo '<div class="alert alert-error" style="max-width:420px;width:100%">'   . h($err) . '</div>';
+    if ($ok)  echo '<div class="alert alert-success" style="max-width:420px;width:100%">' . h($ok)  . '</div>';
+
+    if (!$ok) {
+        echo '<form class="auth-box" method="post" action="?action=forgot_password">';
+        echo csrfField();
+        echo '<h1>Mot de passe oublié</h1>';
+        echo '<p class="text-sm text-muted" style="margin-bottom:.5rem">Saisissez votre prénom ou pseudo. Un administrateur vous communiquera ensuite un lien de réinitialisation.</p>';
+        echo '<div class="form-group"><label>Prénom / pseudo</label><input type="text" name="display_name" required autofocus autocomplete="username"></div>';
+        echo '<button type="submit" class="btn btn-primary w-full">Envoyer la demande</button>';
+        echo '<p class="text-sm text-muted" style="text-align:center"><a href="?action=login">← Retour à la connexion</a></p>';
+        echo '</form>';
+    } else {
+        echo '<div class="auth-box">';
+        echo '<h1>Demande enregistrée</h1>';
+        echo '<p class="text-sm text-muted">Un administrateur va préparer votre lien de réinitialisation et vous le communiquer.</p>';
+        echo '<a href="?action=login" class="btn btn-primary w-full" style="margin-top:1rem;display:block;text-align:center">Retour à la connexion</a>';
+        echo '</div>';
+    }
+
+    echo '</div>';
+    layoutClose();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VUE — RÉINITIALISATION DU MOT DE PASSE
+// ═══════════════════════════════════════════════════════════
+
+function viewResetPassword(string $token): void
+{
+    layoutOpen('Nouveau mot de passe');
+    $err = flash('error');
+
+    echo '<div class="auth-wrap">';
+    echo '<div><h1 style="font-family:\'Lora\',serif;font-size:1.8rem;text-align:center">🌿 ' . h(APP_NAME) . '</h1>';
+    echo '<p style="text-align:center;color:var(--muted);margin-top:.4rem">' . h(APP_SUBTITLE) . '</p></div>';
+
+    $valid = $token && validatePasswordResetToken($token);
+
+    if (!$valid) {
+        echo '<div class="auth-box">';
+        echo '<h1>Lien invalide</h1>';
+        echo '<p class="text-sm text-muted">Ce lien de réinitialisation est invalide ou a expiré (durée de validité : 1 heure).</p>';
+        echo '<p class="text-sm text-muted" style="margin-top:.75rem">Faites une nouvelle demande si nécessaire.</p>';
+        echo '<a href="?action=forgot_password" class="btn btn-primary w-full" style="margin-top:1rem;display:block;text-align:center">Nouvelle demande</a>';
+        echo '</div>';
+    } else {
+        if ($err) echo '<div class="alert alert-error" style="max-width:420px;width:100%">' . h($err) . '</div>';
+        echo '<form class="auth-box" method="post" action="?action=reset_password">';
+        echo csrfField();
+        echo '<input type="hidden" name="token" value="' . h($token) . '">';
+        echo '<h1>Nouveau mot de passe</h1>';
+        echo '<div class="form-group"><label>Nouveau mot de passe</label><input type="password" name="new_password" required minlength="8" autofocus autocomplete="new-password"></div>';
+        echo '<div class="form-group"><label>Confirmer le mot de passe</label><input type="password" id="pw_confirm" required minlength="8" autocomplete="new-password"></div>';
+        echo '<button type="submit" class="btn btn-primary w-full" id="pw_submit">Enregistrer le nouveau mot de passe</button>';
+        echo '</form>';
+        echo '<script>
+document.querySelector("form").addEventListener("submit", function(e) {
+    var p1 = this.querySelector("[name=new_password]").value;
+    var p2 = document.getElementById("pw_confirm").value;
+    if (p1 !== p2) { e.preventDefault(); alert("Les mots de passe ne correspondent pas."); }
+});
+</script>';
+    }
+
+    echo '</div>';
+    layoutClose();
+}
+
+// ═══════════════════════════════════════════════════════════
 //  VUE — ADMIN
 // ═══════════════════════════════════════════════════════════
 
 function viewAdmin(array $user): void
 {
     $user = requireAdmin();
+    cleanExpiredResetTokens();
     layoutOpen('Administration', $user, 'admin');
-    $users = getAllUsers();
+    $users        = getAllUsers();
+    $resetRequests = getPendingResetRequests();
     $err   = flash('error');
     $ok    = flash('success');
+
+    // ── Lien de reset généré à afficher une seule fois
+    $generatedUrl = null;
+    if ($ok && str_starts_with($ok, 'reset_url:')) {
+        $generatedUrl = substr($ok, 10);
+        $ok = null;
+    }
 
     echo '<div class="page">';
     echo '<div class="page-header"><h1>⚙️ Administration</h1><p>Gestion des comptes et modération.</p></div>';
     if ($err) echo '<div class="alert alert-error">'   . h($err) . '</div>';
     if ($ok)  echo '<div class="alert alert-success">' . h($ok)  . '</div>';
+    if ($generatedUrl) {
+        echo '<div class="alert alert-success" style="word-break:break-all">';
+        echo '<strong>Lien de réinitialisation généré (valable 1 h) :</strong><br>';
+        echo '<code style="font-size:.85rem;user-select:all">' . h($generatedUrl) . '</code><br>';
+        echo '<button class="btn btn-ghost btn-sm" style="margin-top:.4rem" onclick="navigator.clipboard.writeText(' . json_encode($generatedUrl) . ').then(()=>{this.textContent=\'✅ Copié !\';setTimeout(()=>this.textContent=\'📋 Copier\',2000)})">📋 Copier</button>';
+        echo '</div>';
+    }
+
+    // ── Demandes de réinitialisation en attente (créées par les utilisateurs)
+    if ($resetRequests) {
+        $baseUrl = (isset($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST']
+                 . strtok($_SERVER['REQUEST_URI'], '?');
+        echo '<div class="section-box" style="margin-bottom:1.5rem;border-left:3px solid #e07b39">';
+        echo '<div class="section-box-header"><h2>🔑 Demandes de réinitialisation (' . count($resetRequests) . ')</h2>';
+        echo '<span class="text-sm text-muted">Copiez et transmettez le lien à l\'utilisateur concerné — valable 1 heure</span></div>';
+        echo '<div style="overflow-x:auto"><table class="data-table">';
+        echo '<thead><tr><th>Utilisateur</th><th>Demandé le</th><th>Lien (à copier)</th></tr></thead><tbody>';
+        foreach ($resetRequests as $req) {
+            $resetUrl = $baseUrl . '?action=reset_password&token=' . rawurlencode($req['token']);
+            echo '<tr><td><strong>' . h($req['display_name']) . '</strong></td>';
+            echo '<td>' . fmtDate($req['created_at']) . '</td>';
+            echo '<td style="max-width:320px">';
+            echo '<code style="font-size:.75rem;word-break:break-all;user-select:all">' . h($resetUrl) . '</code><br>';
+            echo '<button class="btn btn-ghost btn-sm" style="margin-top:.3rem" onclick="navigator.clipboard.writeText(' . json_encode($resetUrl) . ').then(()=>{this.textContent=\'✅ Copié !\';setTimeout(()=>this.textContent=\'📋 Copier\',2000)})">📋 Copier</button>';
+            echo '</td></tr>';
+        }
+        echo '</tbody></table></div></div>';
+    }
 
     echo '<div class="section-box">';
     echo '<div class="section-box-header"><h2>Utilisateurs (' . count($users) . ')</h2></div>';
@@ -2201,7 +2362,7 @@ function viewAdmin(array $user): void
         echo '<td>';
 
         if (!$isSelf) {
-            echo '<div style="display:flex;gap:.3rem">';
+            echo '<div style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:flex-start">';
             // Toggle actif
             echo '<form method="post" action="?action=admin_toggle_user" style="display:inline">';
             echo csrfField();
@@ -2217,6 +2378,27 @@ function viewAdmin(array $user): void
             echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#f5b7b1" ';
             echo 'title="Supprimer" onclick="return confirm(\'Supprimer ce compte ? Le contenu sera anonymisé.\')">✕</button>';
             echo '</form>';
+            // Réinitialiser mot de passe
+            $uid = (int)$u['id'];
+            echo '<details style="position:relative">';
+            echo '<summary class="btn btn-ghost btn-sm" title="Réinitialiser le mot de passe" style="cursor:pointer;list-style:none">🔑</summary>';
+            echo '<div style="position:absolute;right:0;top:2rem;z-index:10;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:230px;display:flex;flex-direction:column;gap:.6rem">';
+            // Option A : définir un nouveau mot de passe directement
+            echo '<form method="post" action="?action=admin_reset_password">';
+            echo csrfField();
+            echo '<input type="hidden" name="user_id" value="' . $uid . '">';
+            echo '<div class="form-group" style="margin-bottom:.4rem"><label style="font-size:.78rem;font-weight:600">Définir un mot de passe</label>';
+            echo '<input type="password" name="new_password" required minlength="8" placeholder="8 car. min." style="font-size:.82rem;padding:.3rem .5rem"></div>';
+            echo '<button type="submit" class="btn btn-primary btn-sm" style="width:100%">Appliquer</button>';
+            echo '</form>';
+            // Option B : générer un lien de reset
+            echo '<hr style="border:0;border-top:1px solid var(--border)">';
+            echo '<form method="post" action="?action=admin_generate_reset">';
+            echo csrfField();
+            echo '<input type="hidden" name="user_id" value="' . $uid . '">';
+            echo '<button type="submit" class="btn btn-ghost btn-sm" style="width:100%">🔗 Générer un lien (1 h)</button>';
+            echo '</form>';
+            echo '</div></details>';
             echo '</div>';
         } else {
             echo '<em class="text-muted text-sm">Vous</em>';

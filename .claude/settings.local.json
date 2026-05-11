@@ -11,7 +11,17 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost/Sharehood/?action=login\")",
       "Bash(curl -s \"http://localhost/Sharehood/?action=forgot_password\")",
       "Bash(curl -s \"http://localhost/Sharehood/?action=reset_password&token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")",
-      "Bash(curl -s \"http://localhost/Sharehood/?action=login\")"
+      "Bash(curl -s \"http://localhost/Sharehood/?action=login\")",
+      "Bash(sqlite3 /var/www/html/Sharehood/data/panneau.sqlite \".schema\")",
+      "Bash(grep -n '$err = flash\\\\|alert-error\\\\|alert-success' /var/www/html/Sharehood/index.php)",
+      "Bash(sqlite3 data/panneau.sqlite \".tables\")",
+      "Bash(sudo -u www-data sqlite3 /var/www/html/Sharehood/data/panneau.sqlite \".tables\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost/?action=group_orders\" -b \"test=1\")",
+      "Bash(curl -s \"http://localhost/?action=group_orders\")",
+      "Bash(curl -s \"http://localhost/Sharehood/?action=group_orders\")",
+      "Bash(curl -sL \"http://localhost/Sharehood/?action=group_orders\")",
+      "Bash(curl -sL \"http://localhost/Sharehood/?action=board\")",
+      "Bash(curl -sL \"http://localhost/Sharehood/?action=dashboard\")"
     ]
   }
 }

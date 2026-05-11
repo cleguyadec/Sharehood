@@ -139,6 +139,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             deleteComment((int)($_POST['comment_id'] ?? 0), $user);
             redirect('?action=board');
 
+        case 'group_order_add':
+            $user = requireAuth();
+            if (empty(trim($_POST['title'] ?? ''))) {
+                flash('error', 'Le titre est obligatoire.');
+            } else {
+                addGroupOrder($user, $_POST);
+                flash('success', 'Achat groupé créé !');
+            }
+            redirect('?action=group_orders');
+
+        case 'group_order_status':
+            $user = requireAuth();
+            if (!updateGroupOrderStatus((int)($_POST['order_id'] ?? 0), trim($_POST['status'] ?? ''), $user)) {
+                flash('error', 'Mise à jour impossible.');
+            }
+            redirect('?action=group_orders');
+
+        case 'group_order_delete':
+            $user = requireAuth();
+            if (!deleteGroupOrder((int)($_POST['order_id'] ?? 0), $user)) {
+                flash('error', 'Suppression non autorisée.');
+            } else {
+                flash('success', 'Achat groupé supprimé.');
+            }
+            redirect('?action=group_orders');
+
+        case 'group_order_product_add':
+            $user = requireAuth();
+            if (empty(trim($_POST['name'] ?? ''))) {
+                flash('error', 'Le nom du produit est obligatoire.');
+            } elseif (!addGroupOrderProduct((int)($_POST['order_id'] ?? 0), $user, $_POST)) {
+                flash('error', 'Ajout impossible (commande non ouverte ou accès refusé).');
+            }
+            redirect('?action=group_orders');
+
+        case 'group_order_product_delete':
+            $user = requireAuth();
+            deleteGroupOrderProduct((int)($_POST['product_id'] ?? 0), $user);
+            redirect('?action=group_orders');
+
+        case 'group_order_request_set':
+            $user = requireAuth();
+            $qty  = (float)str_replace(',', '.', $_POST['quantity'] ?? '0');
+            setGroupOrderRequest((int)($_POST['product_id'] ?? 0), $user['id'], $qty);
+            redirect('?action=group_orders');
+
+        case 'group_order_request_paid':
+            $user = requireAuth();
+            setRequestPaid((int)($_POST['request_id'] ?? 0), (int)($_POST['paid'] ?? 0), $user);
+            redirect('?action=group_orders');
+
+        case 'group_order_request_dispatched':
+            $user = requireAuth();
+            setRequestDispatched((int)($_POST['request_id'] ?? 0), (int)($_POST['dispatched'] ?? 0), $user);
+            redirect('?action=group_orders');
+
         case 'library_condition':
             $user = requireAuth();
             setItemCondition((int)($_POST['item_id'] ?? 0), trim($_POST['condition'] ?? ''), $user);
@@ -278,6 +334,7 @@ switch ($action) {
     case 'reset_password':  viewResetPassword($_GET['token'] ?? '');     break;
     case 'board':          viewBoard($user);                             break;
     case 'library':        viewLibrary($user);                          break;
+    case 'group_orders':   viewGroupOrders($user);                      break;
     case 'dashboard':      viewDashboard($user);                        break;
     case 'my_data':        viewMyData($user);                           break;
     case 'admin':          viewAdmin($user);                            break;
@@ -634,6 +691,84 @@ footer { text-align: center; padding: 1.25rem; color: var(--muted); font-size: .
 .cond-lost   { background: #fce8e8; color: #9c3a3a; }
 .cond-broken { background: #fff3cd; color: #7d5800; }
 
+/* ── ACHATS GROUPÉS ── */
+.go-status { display: inline-block; font-size: .68rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .06em; padding: .14rem .5rem; border-radius: 20px; }
+.go-status-open     { background: #dff0e2; color: #2e6b42; }
+.go-status-ordered  { background: #fff3cd; color: #7d5800; }
+.go-status-received { background: #d1ecf1; color: #0c5460; }
+.go-status-closed   { background: #ede8e0; color: #7a6045; }
+
+.go-order { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); margin-bottom: 1.5rem; overflow: hidden; }
+.go-order-head { padding: 1rem 1.5rem; display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; }
+.go-order-title { font-family: 'Lora', serif; font-size: 1.1rem; font-weight: 600; }
+.go-order-meta  { font-size: .8rem; color: var(--muted); margin-top: .2rem; display: flex; flex-wrap: wrap; gap: .5rem; }
+.go-order-body  { border-top: 1px solid var(--border); padding: 1.25rem 1.5rem; }
+.go-desc        { font-size: .88rem; color: var(--muted); margin-bottom: 1rem; line-height: 1.55; }
+
+.go-product { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: .9rem 1rem; margin-bottom: .75rem; }
+.go-product-head { display: flex; align-items: center; justify-content: space-between;
+  gap: .5rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.go-product-name { font-weight: 600; font-size: .95rem; }
+.go-product-price { font-size: .82rem; color: var(--muted); }
+
+.go-requests-list { display: flex; flex-wrap: wrap; gap: .35rem; margin: .4rem 0; }
+.go-req-chip { font-size: .78rem; background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 20px; padding: .15rem .6rem; color: var(--text); }
+.go-req-chip.mine { background: #e8f5e9; border-color: #a9dfb0; color: #1e6e28; }
+
+.go-product-total { font-size: .82rem; font-weight: 600; color: var(--text);
+  margin-top: .5rem; padding-top: .5rem; border-top: 1px dashed var(--border); }
+
+.go-my-qty-form { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  background: #f0f7f0; border: 1px solid #a9dfb0; border-radius: 6px;
+  padding: .5rem .75rem; margin-bottom: .5rem; }
+.go-my-qty-form label { font-size: .78rem; font-weight: 500; color: #2e6b42; white-space: nowrap; }
+.go-my-qty-form input[type="number"] { width: 90px; padding: .38rem .6rem; border: 1px solid var(--border);
+  border-radius: 5px; font-size: .9rem; background: var(--card-bg); }
+.go-my-qty-unit { font-size: .82rem; color: var(--muted); }
+
+.go-dispatch { margin-top: 1.25rem; padding-top: 1rem; border-top: 2px solid var(--border); }
+.go-dispatch h3 { font-family: 'Lora', serif; font-size: 1rem; margin-bottom: .75rem; }
+.go-person { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: .75rem 1rem; margin-bottom: .6rem; }
+.go-person-name { font-weight: 600; font-size: .9rem; margin-bottom: .4rem; }
+.go-person-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  font-size: .83rem; padding: .2rem 0; }
+.go-person-row + .go-person-row { border-top: 1px dashed var(--border); padding-top: .35rem; margin-top: .2rem; }
+.go-person-subtotal { font-size: .82rem; font-weight: 600; margin-top: .5rem;
+  padding-top: .5rem; border-top: 1px solid var(--border); }
+
+.go-check-btn { display: inline-flex; align-items: center; gap: .25rem;
+  padding: .2rem .55rem; font-size: .74rem; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--card-bg);
+  font-family: 'DM Sans', sans-serif; font-weight: 500; transition: all .15s; }
+.go-check-btn:hover { border-color: var(--col-1); }
+.go-check-btn.done { background: #e8f5e9; border-color: #a9dfb0; color: #1e6e28; }
+
+.go-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center;
+  margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
+.go-total-banner { background: #2a1e10; color: #f2ebe0; border-radius: 6px;
+  padding: .6rem 1rem; font-size: .9rem; font-weight: 500; margin-top: .75rem;
+  display: flex; align-items: center; justify-content: space-between; }
+.go-add-product-form { background: #f0f7f0; border: 1px dashed #a9dfb0; border-radius: 8px;
+  padding: .85rem 1rem; margin-bottom: .75rem; display: flex; gap: .5rem; flex-wrap: wrap; align-items: flex-end; }
+.go-add-product-form .form-group { flex: 1; min-width: 120px; }
+.go-cond-warning { background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px;
+  padding: .55rem .85rem; margin-top: .5rem; font-size: .82rem; color: #6d4c00; line-height: 1.5; }
+.go-cond-warning strong { color: #5d3f00; }
+.go-cond-info { font-size: .76rem; color: var(--muted); margin-top: .15rem; }
+.go-tabs { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: 1.25rem;
+  padding-bottom: .75rem; border-bottom: 2px solid var(--border); }
+.go-tab { padding: .38rem .85rem; border: 1px solid var(--border); border-radius: 20px;
+  font-size: .83rem; font-weight: 500; background: var(--bg); color: var(--muted);
+  cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all .15s; white-space: nowrap; }
+.go-tab:hover { color: var(--text); border-color: var(--col-1); }
+.go-tab.active { background: var(--col-1); border-color: var(--col-1); color: #fff; }
+
 /* ── FILTER BAR ── */
 .filter-bar {
   display: flex; gap: .45rem; flex-wrap: wrap; align-items: center;
@@ -674,6 +809,7 @@ footer { text-align: center; padding: 1.25rem; color: var(--muted); font-size: .
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
   line-height: 1.4; transition: opacity .15s; }
 .cal-ev:hover { opacity: .8; }
+.cal-ev-order { background: var(--col-0); }
 .card.cal-focus { box-shadow: 0 0 0 2.5px var(--col-1); background: #f0f7f0; }
 
 /* ── ONGLETS BIBLIOTHÈQUE ── */
@@ -730,11 +866,12 @@ footer { text-align: center; padding: 1.25rem; color: var(--muted); font-size: .
 HTML;
 
     if ($user) {
-        $board   = $currentAction === 'board'     ? 'active' : '';
-        $library = $currentAction === 'library'   ? 'active' : '';
-        $bilan   = $currentAction === 'dashboard' ? 'active' : '';
-        $mydata  = $currentAction === 'my_data'   ? 'active' : '';
-        $admin   = $currentAction === 'admin'     ? 'active' : '';
+        $board   = $currentAction === 'board'        ? 'active' : '';
+        $library = $currentAction === 'library'      ? 'active' : '';
+        $bilan   = $currentAction === 'dashboard'    ? 'active' : '';
+        $orders  = $currentAction === 'group_orders' ? 'active' : '';
+        $mydata  = $currentAction === 'my_data'      ? 'active' : '';
+        $admin   = $currentAction === 'admin'        ? 'active' : '';
         $uname   = h($user['display_name']);
         $csrf    = csrfField();
         echo <<<HTML
@@ -742,10 +879,11 @@ HTML;
   <a class="nav-brand" href="?action=board">{$appName} <small>{$appSub}</small></a>
   <button class="nav-toggle" aria-label="Menu" aria-expanded="false" onclick="toggleNav(this)">☰</button>
   <div class="nav-links" id="nav-links">
-    <a href="?action=board"     class="{$board}">🌿 Tableau</a>
-    <a href="?action=library"   class="{$library}">📚 Prêt-o-thèque</a>
-    <a href="?action=dashboard" class="{$bilan}">📊 Bilan</a>
-    <a href="?action=my_data"   class="{$mydata}">👤 {$uname}</a>
+    <a href="?action=board"        class="{$board}">🌿 Tableau</a>
+    <a href="?action=library"      class="{$library}">📚 Prêt-o-thèque</a>
+    <a href="?action=group_orders" class="{$orders}">🛒 Achats</a>
+    <a href="?action=dashboard"    class="{$bilan}">📊 Bilan</a>
+    <a href="?action=my_data"      class="{$mydata}">👤 {$uname}</a>
 HTML;
         if ($isAdmin) {
             echo "<a href=\"?action=admin\" class=\"{$admin}\">⚙️ Admin</a>";
@@ -907,7 +1045,19 @@ function viewBoard(array $user): void
     $calEvents = [];
     foreach ($cards[1] ?? [] as $c) {
         if (($c['status'] ?? '') === 'planifiee' && !empty($c['event_date'])) {
-            $calEvents[] = ['id' => (int)$c['id'], 'date' => $c['event_date'], 'title' => $c['title']];
+            $calEvents[] = ['id' => (int)$c['id'], 'date' => $c['event_date'], 'title' => $c['title'], 'type' => 'card'];
+        }
+    }
+    // Achats groupés ouverts avec date limite
+    foreach (getGroupOrders() as $go) {
+        if (!empty($go['deadline']) && $go['status'] !== 'closed') {
+            $statusLabel = ORDER_STATUS_META[$go['status']]['label'] ?? $go['status'];
+            $calEvents[] = [
+                'id'    => (int)$go['id'],
+                'date'  => $go['deadline'],
+                'title' => '🛒 ' . $go['title'],
+                'type'  => 'order',
+            ];
         }
     }
 
@@ -1039,10 +1189,13 @@ function calNav(dir) {
   if (calM > 11) { calM = 0;  calY++; }
   renderCal();
 }
-function calClickEvent(cardId) {
-  // Retirer les anciens highlights
+function calClickEvent(id, type) {
+  if (type === 'order') {
+    window.location.href = '?action=group_orders#order-' + id;
+    return;
+  }
   document.querySelectorAll('.card.cal-focus').forEach(c => c.classList.remove('cal-focus'));
-  const card = document.querySelector('.card[data-id="' + cardId + '"]');
+  const card = document.querySelector('.card[data-id="' + id + '"]');
   if (!card) return;
   card.classList.add('cal-focus');
   card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1050,7 +1203,7 @@ function calClickEvent(cardId) {
 function renderCal() {
   const today  = new Date().toISOString().slice(0, 10);
   const first  = new Date(calY, calM, 1).getDay();
-  const offset = (first + 6) % 7; // lundi en premier
+  const offset = (first + 6) % 7;
   const total  = new Date(calY, calM + 1, 0).getDate();
   document.getElementById('cal-title').textContent = MONTHS_FR[calM] + ' ' + calY;
   const grid = document.getElementById('cal-grid');
@@ -1063,8 +1216,9 @@ function renderCal() {
     const evs = CAL_EVENTS.filter(e => e.date === ds);
     let html  = '<div class="cal-num">' + d + '</div>';
     evs.forEach(e => {
-      const t = e.title.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-      html += '<div class="cal-ev" onclick="calClickEvent(' + e.id + ')" title="' + t + '">' + t + '</div>';
+      const t   = e.title.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+      const cls = e.type === 'order' ? 'cal-ev cal-ev-order' : 'cal-ev';
+      html += '<div class="' + cls + '" onclick="calClickEvent(' + e.id + ',\'' + e.type + '\')" title="' + t + '">' + t + '</div>';
     });
     grid.insertAdjacentHTML('beforeend',
       '<div class="cal-cell' + (ds === today ? ' today' : '') + '">' + html + '</div>');
@@ -2116,6 +2270,64 @@ function viewDashboard(array $user): void
     }
     echo '</div>';
 
+    // ── Mes participations aux achats groupés
+    $myReqs = $data['my_order_requests'];
+    echo '<div class="section-box mt-2">';
+    echo '<div class="section-box-header"><h2>🛒 Mes achats groupés</h2>';
+    echo '<span class="text-sm text-muted">' . count($myReqs) . ' commande' . (count($myReqs) > 1 ? 's' : '') . '</span></div>';
+    if (empty($myReqs)) {
+        echo '<div class="section-box-body"><p class="text-muted">Vous ne participez à aucun achat groupé.</p></div>';
+    } else {
+        echo '<div style="overflow-x:auto"><table class="data-table">';
+        echo '<thead><tr><th>Achat</th><th>Organisateur</th><th>Date limite</th><th>Statut</th><th>Mon total</th><th>Payé / Remis</th></tr></thead><tbody>';
+        foreach ($myReqs as $row) {
+            $stMeta    = ORDER_STATUS_META[$row['status']] ?? ['label' => $row['status'], 'cls' => ''];
+            $myTotal   = number_format($row['my_total'], 2, ',', ' ');
+            $paidAll   = $row['paid_count'] >= $row['request_count'] && $row['request_count'] > 0;
+            $dispAll   = $row['dispatched_count'] >= $row['request_count'] && $row['request_count'] > 0;
+            $paidLabel = $paidAll ? '<span style="color:#155724">✓ Payé</span>' : '<span style="color:var(--muted)">En attente</span>';
+            $dispLabel = $dispAll ? '<span style="color:#155724">✓ Remis</span>' : '<span style="color:var(--muted)">En attente</span>';
+            $deadlineLate = $row['deadline'] && $row['deadline'] < date('Y-m-d') && $row['status'] === 'open'
+                ? ' style="color:#c0392b;font-weight:600"' : '';
+            echo '<tr>';
+            echo '<td><a href="?action=group_orders#order-' . (int)$row['id'] . '" style="color:inherit"><strong>' . h($row['title']) . '</strong></a></td>';
+            echo '<td>' . h($row['creator_name'] ?? '—') . '</td>';
+            echo '<td' . $deadlineLate . '>' . ($row['deadline'] ? fmtDate($row['deadline']) : '—') . '</td>';
+            echo '<td><span class="go-status ' . h($stMeta['cls']) . '">' . h($stMeta['label']) . '</span></td>';
+            echo '<td><strong>' . $myTotal . ' €</strong></td>';
+            echo '<td>' . $paidLabel . ' · ' . $dispLabel . '</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table></div>';
+    }
+    echo '</div>';
+
+    // ── Achats groupés que j'ai créés
+    $myCreated = $data['my_created_orders'];
+    if (!empty($myCreated)) {
+        echo '<div class="section-box mt-2">';
+        echo '<div class="section-box-header"><h2>📋 Achats que j\'ai organisés</h2>';
+        echo '<span class="text-sm text-muted">' . count($myCreated) . '</span></div>';
+        echo '<div style="overflow-x:auto"><table class="data-table">';
+        echo '<thead><tr><th>Achat</th><th>Date limite</th><th>Statut</th><th>Produits</th><th>Participants</th><th>Montant total</th></tr></thead><tbody>';
+        foreach ($myCreated as $row) {
+            $stMeta  = ORDER_STATUS_META[$row['status']] ?? ['label' => $row['status'], 'cls' => ''];
+            $total   = number_format($row['total_amount'], 2, ',', ' ');
+            $deadlineLate = $row['deadline'] && $row['deadline'] < date('Y-m-d') && $row['status'] === 'open'
+                ? ' style="color:#c0392b;font-weight:600"' : '';
+            echo '<tr>';
+            echo '<td><a href="?action=group_orders#order-' . (int)$row['id'] . '" style="color:inherit"><strong>' . h($row['title']) . '</strong></a></td>';
+            echo '<td' . $deadlineLate . '>' . ($row['deadline'] ? fmtDate($row['deadline']) : '—') . '</td>';
+            echo '<td><span class="go-status ' . h($stMeta['cls']) . '">' . h($stMeta['label']) . '</span></td>';
+            echo '<td>' . (int)$row['product_count'] . '</td>';
+            echo '<td>' . (int)$row['participant_count'] . '</td>';
+            echo '<td><strong>' . $total . ' €</strong></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table></div>';
+        echo '</div>';
+    }
+
     echo '</div>';
     layoutClose();
 }
@@ -2497,4 +2709,297 @@ function viewPrivacy(): void
 </div>
 HTML;
     layoutClose();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VUE — ACHATS GROUPÉS
+// ═══════════════════════════════════════════════════════════
+
+function viewGroupOrders(array $user): void
+{
+    $orders  = getGroupOrders();
+    $isAdmin = $user['role'] === 'admin';
+    $csrf    = csrfField();
+    $err     = flash('error');
+    $ok      = flash('success');
+
+    layoutOpen('Achats groupés', $user, 'group_orders');
+    echo '<div class="page">';
+    echo '<div class="page-header flex-between" style="flex-wrap:wrap;gap:.75rem">';
+    echo '<div><h1 style="font-family:\'Lora\',serif;font-size:1.6rem">🛒 Achats groupés</h1>';
+    echo '<p style="color:var(--muted);margin-top:.3rem;font-size:.9rem">Organisez des commandes collectives pour l\'habitat</p></div>';
+    echo '<button class="btn btn-primary" onclick="document.getElementById(\'modal-new-order\').classList.add(\'open\')">+ Nouvel achat</button>';
+    echo '</div>';
+
+    if ($err) echo '<div class="alert alert-error">' . h($err) . '</div>';
+    if ($ok)  echo '<div class="alert alert-success">' . h($ok) . '</div>';
+
+    if (empty($orders)) {
+        echo '<div style="text-align:center;padding:3rem;color:var(--muted)">';
+        echo '<p style="font-size:2rem">🛒</p><p style="margin-top:.5rem">Aucun achat groupé pour l\'instant.<br>Créez le premier !</p>';
+        echo '</div>';
+    } else {
+        $statusFilter = preg_replace('/[^a-z]/', '', $_GET['status'] ?? 'all');
+        echo '<div class="go-tabs">';
+        foreach (['all' => 'Tous', 'open' => 'Ouverts', 'ordered' => 'Commandés', 'received' => 'Reçus', 'closed' => 'Clôturés'] as $key => $label) {
+            $active = $statusFilter === $key ? 'active' : '';
+            echo "<a class='go-tab {$active}' href='?action=group_orders&status={$key}'>{$label}</a>";
+        }
+        echo '</div>';
+
+        foreach ($orders as $summary) {
+            if ($statusFilter !== 'all' && $summary['status'] !== $statusFilter) continue;
+            $order = getGroupOrder((int)$summary['id']);
+            if (!$order) continue;
+            renderGroupOrder($order, $user, $csrf, $isAdmin);
+        }
+    }
+
+    // Modal création d'un achat groupé
+    echo <<<HTML
+<div class="modal-overlay" id="modal-new-order" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Nouvel achat groupé">
+    <h3>🛒 Nouvel achat groupé</h3>
+    <form method="post" action="?action=group_order_add">
+HTML;
+    echo $csrf;
+    echo <<<HTML
+      <div class="form-group">
+        <label>Titre *</label>
+        <input type="text" name="title" required maxlength="120" placeholder="ex : Oranges bio marché Villeneuve">
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea name="description" placeholder="Source, lien, informations pratiques…"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Date limite de commande</label>
+        <input type="date" name="deadline">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-new-order').classList.remove('open')">Annuler</button>
+        <button type="submit" class="btn btn-primary">Créer</button>
+      </div>
+    </form>
+  </div>
+</div>
+HTML;
+
+    echo '</div>'; // .page
+    layoutClose();
+}
+
+function renderGroupOrder(array $order, array $user, string $csrf, bool $isAdmin): void
+{
+    $oid          = (int)$order['id'];
+    $isCreator    = (int)$order['creator_id'] === (int)$user['id'];
+    $canManage    = $isAdmin || $isCreator;
+    $isOpen       = $order['status'] === 'open';
+    $statusMeta   = ORDER_STATUS_META[$order['status']] ?? ['label' => $order['status'], 'cls' => ''];
+    $statusLabel  = h($statusMeta['label']);
+    $statusCls    = h($statusMeta['cls']);
+    $title        = h($order['title']);
+    $creator      = h($order['creator_name'] ?? '—');
+    $deadline     = $order['deadline'] ? 'Commande avant le ' . h(fmtDate($order['deadline'])) : '';
+    $productCount = count($order['products']);
+    $partCount    = count($order['requests_by_user']);
+
+    $totalAmount  = array_sum(array_column($order['products'], 'total_price'));
+    $totalFmt     = number_format($totalAmount, 2, ',', ' ');
+
+    echo "<div class='go-order' id='order-{$oid}'>";
+    echo "<div class='go-order-head'>";
+    echo "<div>";
+    echo "<div class='go-order-title'>{$title}</div>";
+    echo "<div class='go-order-meta'>";
+    echo "<span class='go-status {$statusCls}'>{$statusLabel}</span>";
+    if ($deadline) echo "<span>📅 {$deadline}</span>";
+    echo "<span>👤 {$creator}</span>";
+    echo "<span>📦 {$productCount} produit" . ($productCount > 1 ? 's' : '') . "</span>";
+    if ($partCount) echo "<span>👥 {$partCount} participant" . ($partCount > 1 ? 's' : '') . "</span>";
+    echo "</div>";
+    if ($order['description']) echo "<p class='go-desc' style='margin-top:.5rem'>" . h($order['description']) . "</p>";
+    echo "</div>"; // info block
+
+    // Boutons de gestion
+    echo "<div style='display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;flex-shrink:0'>";
+    if ($canManage) {
+        $nextMap   = ['open' => 'ordered', 'ordered' => 'received', 'received' => 'closed'];
+        $labelMap  = ['open' => '📬 Commandé', 'ordered' => '📦 Reçu', 'received' => '✅ Clôturer'];
+        if (isset($nextMap[$order['status']])) {
+            $ns = $nextMap[$order['status']];
+            $nl = $labelMap[$order['status']];
+            echo "<form method='post' action='?action=group_order_status'>{$csrf}";
+            echo "<input type='hidden' name='order_id' value='{$oid}'>";
+            echo "<input type='hidden' name='status' value='{$ns}'>";
+            echo "<button type='submit' class='btn btn-ghost btn-sm'>{$nl}</button></form>";
+        }
+        echo "<form method='post' action='?action=group_order_delete' onsubmit=\"return confirm('Supprimer cet achat groupé et toutes ses données ?')\">{$csrf}";
+        echo "<input type='hidden' name='order_id' value='{$oid}'>";
+        echo "<button type='submit' class='btn-icon' title='Supprimer'>🗑</button></form>";
+    }
+    echo "</div>"; // actions
+    echo "</div>"; // .go-order-head
+
+    echo "<div class='go-order-body'>";
+
+    // Formulaire ajout produit (si ouvert + droits)
+    if ($isOpen && $canManage) {
+        echo "<form class='go-add-product-form' method='post' action='?action=group_order_product_add'>{$csrf}";
+        echo "<input type='hidden' name='order_id' value='{$oid}'>";
+        echo "<div class='form-group'><label>Produit *</label><input type='text' name='name' required placeholder='ex : Oranges bio'></div>";
+        echo "<div class='form-group'><label>Unité</label><input type='text' name='unit' value='kg' placeholder='kg, L, unité…' style='width:80px'></div>";
+        echo "<div class='form-group'><label>Prix / unité (€)</label><input type='number' name='unit_price' step='0.01' min='0' value='0' style='width:100px'></div>";
+        echo "<div class='form-group'><label title='Lot minimum d\\'achat, ex : 5 pour des oranges vendues par 5 kg'>Condit. (optionnel)</label><input type='number' name='conditioning' step='0.01' min='0.01' placeholder='ex : 5' style='width:90px'></div>";
+        echo "<button type='submit' class='btn btn-primary btn-sm' style='margin-top:auto'>+ Ajouter</button>";
+        echo "</form>";
+    }
+
+    if (empty($order['products'])) {
+        echo '<p style="color:var(--muted);font-size:.88rem;font-style:italic">Aucun produit pour l\'instant.</p>';
+    } else {
+        foreach ($order['products'] as $product) {
+            renderGroupProduct($product, $order, $user, $csrf, $canManage, $isOpen);
+        }
+        if ($totalAmount > 0) {
+            echo "<div class='go-total-banner'><span>Total de la commande</span><span><strong>{$totalFmt} €</strong></span></div>";
+        }
+    }
+
+    // Vue dispatch (réception / clôture)
+    if (in_array($order['status'], ['received', 'closed'], true) && !empty($order['requests_by_user'])) {
+        echo "<div class='go-dispatch'><h3>📋 Récapitulatif par habitant</h3>";
+        foreach ($order['requests_by_user'] as $uid => $reqs) {
+            $uname    = h($reqs[0]['user_name']);
+            $subtotal = array_sum(array_column($reqs, 'line_price'));
+            $subFmt   = number_format($subtotal, 2, ',', ' ');
+            echo "<div class='go-person'><div class='go-person-name'>👤 {$uname}</div>";
+            foreach ($reqs as $req) {
+                $rid       = (int)$req['id'];
+                $pname     = h($req['product_name']);
+                $unit      = h($req['unit']);
+                $qty       = $req['quantity'];
+                $price     = number_format($req['line_price'], 2, ',', ' ');
+                $paidDone  = $req['paid']       ? 'done' : '';
+                $dispDone  = $req['dispatched'] ? 'done' : '';
+                echo "<div class='go-person-row'>";
+                echo "<span style='flex:1'>{$pname} — {$qty} {$unit}</span>";
+                echo "<span style='color:var(--muted);margin-right:.5rem'>{$price} €</span>";
+                if ($canManage) {
+                    $pNext = $req['paid']       ? 0 : 1;
+                    $dNext = $req['dispatched'] ? 0 : 1;
+                    $pLbl  = $req['paid']       ? '✓ Payé'  : '○ Payé';
+                    $dLbl  = $req['dispatched'] ? '✓ Remis' : '○ Remis';
+                    echo "<form method='post' action='?action=group_order_request_paid' style='display:inline'>{$csrf}";
+                    echo "<input type='hidden' name='request_id' value='{$rid}'><input type='hidden' name='paid' value='{$pNext}'>";
+                    echo "<button type='submit' class='go-check-btn {$paidDone}'>{$pLbl}</button></form> ";
+                    echo "<form method='post' action='?action=group_order_request_dispatched' style='display:inline'>{$csrf}";
+                    echo "<input type='hidden' name='request_id' value='{$rid}'><input type='hidden' name='dispatched' value='{$dNext}'>";
+                    echo "<button type='submit' class='go-check-btn {$dispDone}'>{$dLbl}</button></form>";
+                } else {
+                    if ($req['paid'])       echo "<span class='go-check-btn done' style='cursor:default'>✓ Payé</span> ";
+                    if ($req['dispatched']) echo "<span class='go-check-btn done' style='cursor:default'>✓ Remis</span>";
+                }
+                echo "</div>"; // .go-person-row
+            }
+            echo "<div class='go-person-subtotal'>Sous-total : {$subFmt} €</div>";
+            echo "</div>"; // .go-person
+        }
+        echo "</div>"; // .go-dispatch
+    }
+
+    echo "</div>"; // .go-order-body
+    echo "</div>"; // .go-order
+}
+
+function renderGroupProduct(array $product, array $order, array $user, string $csrf, bool $canManage, bool $isOpen): void
+{
+    $pid       = (int)$product['id'];
+    $pname     = h($product['name']);
+    $unit      = h($product['unit']);
+    $unitPrice = number_format($product['unit_price'], 2, ',', ' ');
+    $totalQty  = (float)$product['total_qty'];
+    $totalFmt  = number_format($product['total_price'], 2, ',', ' ');
+    $myReq     = $order['requests_by_product'][$pid][$user['id']] ?? null;
+    $myQty     = $myReq ? $myReq['quantity'] : '';
+    $cond      = $product['conditioning'] !== null ? (float)$product['conditioning'] : null;
+
+    // Calcul conditionnement
+    $hasCondWarning = false;
+    $minToOrder     = $totalQty;
+    $reliquat       = 0.0;
+    $lotsNeeded     = 0;
+    if ($cond !== null && $cond > 0 && $totalQty > 0) {
+        $lotsNeeded     = (int)ceil($totalQty / $cond);
+        $minToOrder     = $lotsNeeded * $cond;
+        $reliquat       = round($minToOrder - $totalQty, 10);
+        $hasCondWarning = $reliquat > 0.0001;
+    }
+
+    echo "<div class='go-product'>";
+    echo "<div class='go-product-head'>";
+    echo "<div>";
+    echo "<span class='go-product-name'>{$pname}</span> <span class='go-product-price'>{$unitPrice} € / {$unit}</span>";
+    if ($cond !== null) {
+        $condFmt = rtrim(rtrim(number_format($cond, 4, ',', ' '), '0'), ',');
+        echo " <span class='go-cond-info'>· conditionnement : {$condFmt} {$unit}</span>";
+    }
+    echo "</div>";
+    if ($isOpen && $canManage) {
+        echo "<form method='post' action='?action=group_order_product_delete' style='display:inline' onsubmit=\"return confirm('Supprimer ce produit et toutes les demandes associées ?')\">{$csrf}";
+        echo "<input type='hidden' name='product_id' value='{$pid}'>";
+        echo "<button type='submit' class='btn-icon btn-sm' title='Supprimer le produit'>✕</button></form>";
+    }
+    echo "</div>"; // .go-product-head
+
+    // Formulaire ma quantité (si ouvert)
+    if ($isOpen) {
+        echo "<div class='go-my-qty-form'>";
+        echo "<form method='post' action='?action=group_order_request_set' style='display:flex;align-items:center;gap:.5rem;flex-wrap:wrap'>{$csrf}";
+        echo "<input type='hidden' name='product_id' value='{$pid}'>";
+        echo "<label>Ma demande&nbsp;:</label>";
+        echo "<input type='number' name='quantity' value='" . h((string)$myQty) . "' step='0.01' min='0' max='9999' placeholder='0'>";
+        echo "<span class='go-my-qty-unit'>{$unit}</span>";
+        echo "<button type='submit' class='btn btn-primary btn-sm'>Enregistrer</button>";
+        if ($myReq) {
+            echo "<button type='submit' class='btn btn-ghost btn-sm' onclick=\"this.previousElementSibling.previousElementSibling.previousElementSibling.value='0'\" title='Supprimer ma demande'>Retirer</button>";
+        }
+        echo "</form>";
+        echo "</div>";
+    }
+
+    // Toutes les demandes
+    $allReqs = $order['requests_by_product'][$pid] ?? [];
+    if (!empty($allReqs)) {
+        echo "<div class='go-requests-list'>";
+        foreach ($allReqs as $uid => $req) {
+            $isMine = (int)$uid === (int)$user['id'];
+            $cls    = $isMine ? 'mine' : '';
+            $label  = $isMine ? 'Moi' : h($req['user_name']);
+            $qty    = $req['quantity'];
+            $price  = number_format($req['line_price'], 2, ',', ' ');
+            echo "<span class='go-req-chip {$cls}'>{$label} : {$qty} {$unit} ({$price} €)</span>";
+        }
+        echo "</div>";
+    }
+
+    // Total et avertissement conditionnement
+    if ($totalQty > 0) {
+        $totalQtyFmt = rtrim(rtrim(number_format($totalQty, 4, ',', ' '), '0'), ',');
+        echo "<div class='go-product-total'>Total demandé : <strong>{$totalQtyFmt} {$unit}</strong> — <strong>{$totalFmt} €</strong></div>";
+
+        if ($hasCondWarning) {
+            $minFmt      = rtrim(rtrim(number_format($minToOrder, 4, ',', ' '), '0'), ',');
+            $reliqFmt    = rtrim(rtrim(number_format($reliquat,   4, ',', ' '), '0'), ',');
+            $lotsLabel   = $lotsNeeded > 1 ? "{$lotsNeeded} lots" : "1 lot";
+            $minPriceFmt = number_format($minToOrder * $product['unit_price'], 2, ',', ' ');
+            echo "<div class='go-cond-warning'>";
+            echo "⚠️ Le total demandé (<strong>{$totalQtyFmt} {$unit}</strong>) n'est pas un multiple du conditionnement (<strong>{$condFmt} {$unit}</strong>).<br>";
+            echo "Il faudra commander <strong>{$lotsLabel} → {$minFmt} {$unit}</strong> ({$minPriceFmt} €) pour servir tout le monde.<br>";
+            echo "Reliquat non attribué : <strong>{$reliqFmt} {$unit}</strong> — à répartir ou absorber.";
+            echo "</div>";
+        }
+    }
+
+    echo "</div>"; // .go-product
 }

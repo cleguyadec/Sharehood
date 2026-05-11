@@ -157,6 +157,15 @@ function initDB(): void
             used_at    TEXT
         );
 
+        -- Catégories de la prêt-o-thèque
+        CREATE TABLE IF NOT EXISTS lib_categories (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug       TEXT    NOT NULL UNIQUE,
+            emoji      TEXT    NOT NULL DEFAULT '📦',
+            label      TEXT    NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        );
+
         -- Achats groupés
         CREATE TABLE IF NOT EXISTS group_orders (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -193,6 +202,20 @@ function initDB(): void
             FOREIGN KEY (user_id)    REFERENCES users(id) ON DELETE CASCADE
         );
     ");
+
+    // Peupler les catégories par défaut si la table est vide
+    $count = (int) $db->query('SELECT COUNT(*) FROM lib_categories')->fetchColumn();
+    if ($count === 0) {
+        $stmt = $db->prepare('INSERT OR IGNORE INTO lib_categories (slug, emoji, label, sort_order) VALUES (?, ?, ?, ?)');
+        foreach ([
+            ['livre', '📚', 'Livres', 0],
+            ['outil', '🔧', 'Outils', 1],
+            ['jeu',   '🎲', 'Jeux',   2],
+            ['autre', '📦', 'Autre',  99],
+        ] as [$s, $e, $l, $o]) {
+            $stmt->execute([$s, $e, $l, $o]);
+        }
+    }
 }
 
 function migrateDB(): void
@@ -214,6 +237,29 @@ function migrateDB(): void
     ] as $sql) {
         try { $db->exec($sql); } catch (\PDOException) { /* colonne déjà présente */ }
     }
+    // Catégories prêt-o-thèque (pour installations existantes)
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS lib_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT NOT NULL UNIQUE,
+            emoji TEXT NOT NULL DEFAULT '📦',
+            label TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        )");
+        $count = (int) $db->query('SELECT COUNT(*) FROM lib_categories')->fetchColumn();
+        if ($count === 0) {
+            $stmt = $db->prepare('INSERT OR IGNORE INTO lib_categories (slug, emoji, label, sort_order) VALUES (?, ?, ?, ?)');
+            foreach ([
+                ['livre', '📚', 'Livres', 0],
+                ['outil', '🔧', 'Outils', 1],
+                ['jeu',   '🎲', 'Jeux',   2],
+                ['autre', '📦', 'Autre',  99],
+            ] as [$s, $e, $l, $o]) {
+                $stmt->execute([$s, $e, $l, $o]);
+            }
+        }
+    } catch (\PDOException) {}
+
     // Achats groupés (pour installations existantes)
     foreach ([
         "CREATE TABLE IF NOT EXISTS group_orders (
@@ -1300,12 +1346,78 @@ const COL_META = [
     2 => ['icon' => '✅', 'title' => 'Vécu',           'desc' => 'Les moments partagés — pour s\'en souvenir.'],
 ];
 
-const LIB_CAT_META = [
-    'livre' => ['emoji' => '📚', 'label' => 'Livres'],
-    'outil' => ['emoji' => '🔧', 'label' => 'Outils'],
-    'jeu'   => ['emoji' => '🎲', 'label' => 'Jeux'],
-    'autre' => ['emoji' => '📦', 'label' => 'Autre'],
-];
+function getLibCats(): array
+{
+    static $cache = null;
+    if ($cache === null) {
+        $rows = getDB()->query('SELECT slug, emoji, label FROM lib_categories ORDER BY sort_order ASC, label ASC')->fetchAll();
+        $cache = [];
+        foreach ($rows as $row) {
+            $cache[$row['slug']] = ['emoji' => $row['emoji'], 'label' => $row['label']];
+        }
+        if (empty($cache)) {
+            $cache = [
+                'livre' => ['emoji' => '📚', 'label' => 'Livres'],
+                'outil' => ['emoji' => '🔧', 'label' => 'Outils'],
+                'jeu'   => ['emoji' => '🎲', 'label' => 'Jeux'],
+                'autre' => ['emoji' => '📦', 'label' => 'Autre'],
+            ];
+        }
+    }
+    return $cache;
+}
+
+function getLibCat(string $slug): array
+{
+    $cats = getLibCats();
+    return $cats[$slug] ?? ($cats['autre'] ?? ['emoji' => '📦', 'label' => 'Autre']);
+}
+
+function addLibCategory(string $slug, string $emoji, string $label): ?string
+{
+    $slug  = preg_replace('/[^a-z0-9_]/', '', strtolower(trim($slug)));
+    $label = trim($label);
+    $emoji = trim($emoji) ?: '📦';
+    if (!$slug)  return 'Le slug est obligatoire (lettres minuscules, chiffres, underscore).';
+    if (!$label) return 'Le libellé est obligatoire.';
+    if (strlen($slug) > 30 || strlen($label) > 50) return 'Slug (max 30) ou libellé (max 50) trop long.';
+    try {
+        $db       = getDB();
+        $maxOrder = (int) $db->query('SELECT COALESCE(MAX(sort_order), 0) FROM lib_categories')->fetchColumn();
+        $db->prepare('INSERT INTO lib_categories (slug, emoji, label, sort_order) VALUES (?, ?, ?, ?)')
+           ->execute([$slug, $emoji, $label, $maxOrder + 1]);
+        return null;
+    } catch (\PDOException $e) {
+        return str_contains($e->getMessage(), 'UNIQUE') ? 'Ce slug existe déjà.' : 'Erreur base de données.';
+    }
+}
+
+function editLibCategory(int $id, string $emoji, string $label): ?string
+{
+    $label = trim($label);
+    $emoji = trim($emoji) ?: '📦';
+    if (!$label) return 'Le libellé est obligatoire.';
+    if (strlen($label) > 50) return 'Libellé trop long (max 50 caractères).';
+    getDB()->prepare('UPDATE lib_categories SET emoji = ?, label = ? WHERE id = ?')
+           ->execute([$emoji, $label, $id]);
+    return null;
+}
+
+function deleteLibCategory(int $id): ?string
+{
+    $db   = getDB();
+    $stmt = $db->prepare('SELECT slug FROM lib_categories WHERE id = ?');
+    $stmt->execute([$id]);
+    $cat = $stmt->fetch();
+    if (!$cat) return 'Catégorie introuvable.';
+    if ($cat['slug'] === 'autre') return 'La catégorie "Autre" ne peut pas être supprimée.';
+    $countStmt = $db->prepare('SELECT COUNT(*) FROM library_items WHERE category = ?');
+    $countStmt->execute([$cat['slug']]);
+    $count = (int) $countStmt->fetchColumn();
+    if ($count > 0) return "Cette catégorie contient {$count} objet(s). Déplacez-les d'abord.";
+    $db->prepare('DELETE FROM lib_categories WHERE id = ?')->execute([$id]);
+    return null;
+}
 
 const ORDER_STATUS_META = [
     'open'     => ['label' => 'Ouvert',   'cls' => 'go-status-open'],

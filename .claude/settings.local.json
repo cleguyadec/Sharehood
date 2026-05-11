@@ -21,7 +21,8 @@
       "Bash(curl -s \"http://localhost/Sharehood/?action=group_orders\")",
       "Bash(curl -sL \"http://localhost/Sharehood/?action=group_orders\")",
       "Bash(curl -sL \"http://localhost/Sharehood/?action=board\")",
-      "Bash(curl -sL \"http://localhost/Sharehood/?action=dashboard\")"
+      "Bash(curl -sL \"http://localhost/Sharehood/?action=dashboard\")",
+      "Bash(zip -r panneau-vivant.zip config.php functions.php index.php install.php README.md)"
     ]
   }
 }

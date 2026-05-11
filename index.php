@@ -260,6 +260,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             break;
 
+        case 'admin_lib_cat_add':
+            requireAdmin();
+            $err = addLibCategory(
+                trim($_POST['slug']  ?? ''),
+                trim($_POST['emoji'] ?? ''),
+                trim($_POST['label'] ?? '')
+            );
+            if ($err) flash('error', $err);
+            else      flash('success', 'Catégorie ajoutée.');
+            redirect('?action=admin#lib-cats');
+
+        case 'admin_lib_cat_edit':
+            requireAdmin();
+            $err = editLibCategory(
+                (int)($_POST['cat_id'] ?? 0),
+                trim($_POST['emoji']  ?? ''),
+                trim($_POST['label']  ?? '')
+            );
+            if ($err) flash('error', $err);
+            else      flash('success', 'Catégorie modifiée.');
+            redirect('?action=admin#lib-cats');
+
+        case 'admin_lib_cat_delete':
+            requireAdmin();
+            $err = deleteLibCategory((int)($_POST['cat_id'] ?? 0));
+            if ($err) flash('error', $err);
+            else      flash('success', 'Catégorie supprimée.');
+            redirect('?action=admin#lib-cats');
+
         case 'admin_toggle_user':
             requireAdmin();
             toggleUserActive((int)($_POST['user_id'] ?? 0));
@@ -1677,7 +1706,7 @@ function viewLibrary(array $user): void
         echo ' <span style="opacity:.65">(' . count($items) . ')</span>';
     }
     echo '</button>';
-    foreach (LIB_CAT_META as $k => $m) {
+    foreach (getLibCats() as $k => $m) {
         $cnt = count($bycat[$k] ?? []);
         if ($cnt === 0) continue;
         echo '<button class="lib-tab" onclick="switchLibTab(\'' . h($k) . '\', this)">'
@@ -1697,7 +1726,7 @@ function viewLibrary(array $user): void
     echo '<div class="filter-bar" id="lib-filter-bar">';
     echo '<input type="search" id="lib-search" placeholder="🔍 Rechercher titre, auteur, description…" oninput="filterLib()">';
     echo '<select id="lib-cat" onchange="filterLib()"><option value="">Toutes catégories</option>';
-    foreach (LIB_CAT_META as $k => $m) {
+    foreach (getLibCats() as $k => $m) {
         echo '<option value="' . h($k) . '">' . $m['emoji'] . ' ' . $m['label'] . '</option>';
     }
     echo '</select>';
@@ -1720,7 +1749,7 @@ function viewLibrary(array $user): void
         echo '<p class="text-muted" style="text-align:center;padding:3rem 0">Aucun objet pour l\'instant. Soyez le premier à proposer quelque chose !</p>';
     }
 
-    foreach (LIB_CAT_META as $cat => $meta) {
+    foreach (getLibCats() as $cat => $meta) {
         if (empty($bycat[$cat])) {
             continue;
         }
@@ -1741,7 +1770,7 @@ function viewLibrary(array $user): void
     echo csrfField();
     echo '<div style="display:flex;flex-direction:column;gap:1rem">';
     echo '<div class="form-group"><label>Catégorie</label><select name="category" id="add-cat" onchange="updateLibFields(this.value,\'add\')">';
-    foreach (LIB_CAT_META as $k => $m) {
+    foreach (getLibCats() as $k => $m) {
         echo '<option value="' . h($k) . '">' . $m['emoji'] . ' ' . $m['label'] . '</option>';
     }
     echo '</select></div>';
@@ -1779,7 +1808,7 @@ function viewLibrary(array $user): void
     echo '<input type="hidden" name="item_id" id="edit-item-id">';
     echo '<div style="display:flex;flex-direction:column;gap:1rem">';
     echo '<div class="form-group"><label>Catégorie</label><select name="category" id="edit-cat" onchange="updateLibFields(this.value,\'edit\')">';
-    foreach (LIB_CAT_META as $k => $m) {
+    foreach (getLibCats() as $k => $m) {
         echo '<option value="' . h($k) . '">' . $m['emoji'] . ' ' . $m['label'] . '</option>';
     }
     echo '</select></div>';
@@ -1820,7 +1849,7 @@ function viewLibrary(array $user): void
         }
         echo '</tr></thead><tbody>';
         foreach ($activeLoans as $loan) {
-            $lcat    = LIB_CAT_META[$loan['category']] ?? LIB_CAT_META['autre'];
+            $lcat    = getLibCat($loan['category']);
             $days    = (int) $loan['days_out'];
             $dLabel  = $days === 0 ? "Auj." : $days . ' j';
             $overdue = ($loan['due_date'] && $loan['due_date'] < date('Y-m-d')) ? ' style="color:#c0392b;font-weight:600"' : '';
@@ -1850,7 +1879,7 @@ function viewLibrary(array $user): void
         echo '<thead><tr><th>#</th><th>Objet</th><th>Nb emprunts</th><th>Durée cumulée</th><th>État</th></tr></thead><tbody>';
         $rank = 1;
         foreach ($topFiltered as $top) {
-            $tcat  = LIB_CAT_META[$top['category']] ?? LIB_CAT_META['autre'];
+            $tcat  = getLibCat($top['category']);
             $tcond = CONDITION_META[$top['condition'] ?? 'ok'] ?? CONDITION_META['ok'];
             $days  = (int) $top['total_days'];
             echo '<tr>';
@@ -1980,7 +2009,7 @@ JS;
 
 function renderLibItem(array $it, array $user): void
 {
-    $cat       = LIB_CAT_META[$it['category']] ?? LIB_CAT_META['autre'];
+    $cat       = getLibCat($it['category']);
     $condition = $it['condition'] ?? 'ok';
     $cond      = CONDITION_META[$condition] ?? CONDITION_META['ok'];
     $avail     = (bool) $it['available'];
@@ -2159,7 +2188,7 @@ function viewDashboard(array $user): void
         echo '<div style="overflow-x:auto"><table class="data-table">';
         echo '<thead><tr><th>Objet</th><th>Emprunté par</th><th>Depuis le</th><th>Durée</th><th>Retour prévu</th></tr></thead><tbody>';
         foreach ($data['lent'] as $row) {
-            $cat    = LIB_CAT_META[$row['category']] ?? LIB_CAT_META['autre'];
+            $cat    = getLibCat($row['category']);
             $days   = (int)$row['days_out'];
             $overdue = ($row['due_date'] && $row['due_date'] < date('Y-m-d')) ? ' style="color:#c0392b;font-weight:600"' : '';
             echo '<tr>';
@@ -2184,7 +2213,7 @@ function viewDashboard(array $user): void
         echo '<div style="overflow-x:auto"><table class="data-table">';
         echo '<thead><tr><th>Objet</th><th>Propriétaire</th><th>Depuis le</th><th>Durée</th><th>Retour prévu</th><th>Action</th></tr></thead><tbody>';
         foreach ($data['borrowed'] as $row) {
-            $cat    = LIB_CAT_META[$row['category']] ?? LIB_CAT_META['autre'];
+            $cat    = getLibCat($row['category']);
             $days   = (int)$row['days_out'];
             $overdue = ($row['due_date'] && $row['due_date'] < date('Y-m-d')) ? ' style="color:#c0392b;font-weight:600"' : '';
             echo '<tr>';
@@ -2619,6 +2648,72 @@ function viewAdmin(array $user): void
     }
 
     echo '</tbody></table></div></div>';
+
+    // ── Catégories de la prêt-o-thèque
+    $libCats = getDB()->query('SELECT id, slug, emoji, label, sort_order FROM lib_categories ORDER BY sort_order ASC, label ASC')->fetchAll();
+    echo '<div class="section-box" id="lib-cats" style="margin-top:1.5rem">';
+    echo '<div class="section-box-header"><h2>📚 Catégories prêt-o-thèque (' . count($libCats) . ')</h2>';
+    echo '<span class="text-sm text-muted">Gérez les catégories disponibles dans la prêt-o-thèque</span></div>';
+    echo '<div style="overflow-x:auto"><table class="data-table">';
+    echo '<thead><tr><th>Emoji</th><th>Libellé</th><th>Slug</th><th>Objets</th><th>Actions</th></tr></thead><tbody>';
+    foreach ($libCats as $lc) {
+        $db       = getDB();
+        $countStmt = $db->prepare('SELECT COUNT(*) FROM library_items WHERE category = ?');
+        $countStmt->execute([$lc['slug']]);
+        $nbItems = (int) $countStmt->fetchColumn();
+        $isProtected = $lc['slug'] === 'autre';
+        echo '<tr>';
+        echo '<td style="font-size:1.3rem;text-align:center">' . h($lc['emoji']) . '</td>';
+        echo '<td><strong>' . h($lc['label']) . '</strong></td>';
+        echo '<td><code style="font-size:.82rem">' . h($lc['slug']) . '</code></td>';
+        echo '<td>' . $nbItems . '</td>';
+        echo '<td><div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:flex-start">';
+        // Formulaire d'édition inline
+        echo '<details style="position:relative">';
+        echo '<summary class="btn btn-ghost btn-sm" style="cursor:pointer;list-style:none">✏️</summary>';
+        echo '<div style="position:absolute;left:0;top:2rem;z-index:10;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:220px;display:flex;flex-direction:column;gap:.5rem">';
+        echo '<form method="post" action="?action=admin_lib_cat_edit" style="display:flex;flex-direction:column;gap:.5rem">';
+        echo csrfField();
+        echo '<input type="hidden" name="cat_id" value="' . (int)$lc['id'] . '">';
+        echo '<div class="form-group" style="margin-bottom:0"><label style="font-size:.78rem;font-weight:600">Emoji</label>';
+        echo '<input type="text" name="emoji" value="' . h($lc['emoji']) . '" maxlength="8" style="font-size:.88rem;padding:.3rem .5rem;width:80px"></div>';
+        echo '<div class="form-group" style="margin-bottom:0"><label style="font-size:.78rem;font-weight:600">Libellé</label>';
+        echo '<input type="text" name="label" value="' . h($lc['label']) . '" required maxlength="50" style="font-size:.88rem;padding:.3rem .5rem"></div>';
+        echo '<button type="submit" class="btn btn-primary btn-sm">Enregistrer</button>';
+        echo '</form></div></details>';
+        // Supprimer
+        if (!$isProtected) {
+            echo '<form method="post" action="?action=admin_lib_cat_delete" style="display:inline">';
+            echo csrfField();
+            echo '<input type="hidden" name="cat_id" value="' . (int)$lc['id'] . '">';
+            $confirmMsg = $nbItems > 0
+                ? "Cette catégorie contient {$nbItems} objet(s). Impossible de la supprimer."
+                : "Supprimer la catégorie « {$lc['label']} » ?";
+            echo '<button type="submit" class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#f5b7b1"';
+            if ($nbItems > 0) echo ' disabled title="' . h($confirmMsg) . '"';
+            else              echo ' onclick="return confirm(\'' . h($confirmMsg) . '\')" title="Supprimer"';
+            echo '>✕</button>';
+            echo '</form>';
+        } else {
+            echo '<span class="text-sm text-muted" title="Catégorie par défaut, non supprimable">🔒</span>';
+        }
+        echo '</div></td></tr>';
+    }
+    echo '</tbody></table></div>';
+    // Formulaire d'ajout
+    echo '<div style="padding:1rem;border-top:1px solid var(--border)">';
+    echo '<h3 style="font-size:.9rem;font-weight:600;margin-bottom:.75rem">Ajouter une catégorie</h3>';
+    echo '<form method="post" action="?action=admin_lib_cat_add" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end">';
+    echo csrfField();
+    echo '<div class="form-group" style="margin-bottom:0"><label style="font-size:.78rem;font-weight:600">Emoji</label>';
+    echo '<input type="text" name="emoji" placeholder="📦" maxlength="8" style="width:70px;font-size:.88rem;padding:.4rem .6rem;border:1px solid var(--border);border-radius:4px;background:var(--bg)"></div>';
+    echo '<div class="form-group" style="margin-bottom:0"><label style="font-size:.78rem;font-weight:600">Libellé *</label>';
+    echo '<input type="text" name="label" required maxlength="50" placeholder="ex : Vêtements" style="width:160px;font-size:.88rem;padding:.4rem .6rem;border:1px solid var(--border);border-radius:4px;background:var(--bg)"></div>';
+    echo '<div class="form-group" style="margin-bottom:0"><label style="font-size:.78rem;font-weight:600">Slug * <span style="font-weight:400;text-transform:none">(a-z, 0-9, _)</span></label>';
+    echo '<input type="text" name="slug" required maxlength="30" placeholder="ex : vetements" pattern="[a-z0-9_]+" style="width:140px;font-size:.88rem;padding:.4rem .6rem;border:1px solid var(--border);border-radius:4px;background:var(--bg)"></div>';
+    echo '<button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-end;padding:.45rem .9rem">+ Ajouter</button>';
+    echo '</form></div>';
+    echo '</div>';
 
     // Info RGPD
     echo '<div class="section-box" style="margin-top:1.5rem">';

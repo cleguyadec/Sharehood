@@ -3,7 +3,8 @@ require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/views.php';
 
 return [
-    'migrations' => require __DIR__ . '/migrations.php',
+    'migrations'   => require __DIR__ . '/migrations.php',
+    'public_routes' => ['login', 'register', 'forgot_password', 'reset_password', 'privacy'],
     'routes' => [
         'login'          => fn(?array $u) => viewLogin(),
         'register'       => fn(?array $u) => viewRegister(),

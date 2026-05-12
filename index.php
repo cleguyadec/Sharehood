@@ -36,11 +36,24 @@ $action = preg_replace('/[^a-z_]/', '', $_GET['action'] ?? 'board');
 $user   = currentUser();
 
 // ── Construire les tables de dispatch
-$routes  = [];
-$actions = [];
+$routes       = [];
+$actions      = [];
+$publicRoutes = [];
 foreach ($modules as $mod) {
-    $routes  += $mod['routes']  ?? [];
-    $actions += $mod['actions'] ?? [];
+    $routes       += $mod['routes']       ?? [];
+    $actions      += $mod['actions']      ?? [];
+    $publicRoutes  = array_merge($publicRoutes, $mod['public_routes'] ?? []);
+}
+
+// ── Guard d'authentification
+if (in_array($action, $publicRoutes, true)) {
+    // Pages publiques : rediriger l'utilisateur connecté hors de la page login
+    if ($user && $action === 'login') {
+        redirect('?action=board');
+    }
+} else {
+    // Pages protégées : exiger l'authentification
+    $user = requireAuth();
 }
 
 // ───────────────────────────────────────────────────────────
@@ -67,10 +80,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if (isset($routes[$action])) {
     ($routes[$action])($user);
 } else {
-    // Route inconnue → board (ou login si non connecté)
-    if ($user) {
-        redirect('?action=board');
-    } else {
-        redirect('?action=login');
-    }
+    redirect($user ? '?action=board' : '?action=login');
 }

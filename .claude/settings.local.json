@@ -22,7 +22,14 @@
       "Bash(curl -sL \"http://localhost/Sharehood/?action=group_orders\")",
       "Bash(curl -sL \"http://localhost/Sharehood/?action=board\")",
       "Bash(curl -sL \"http://localhost/Sharehood/?action=dashboard\")",
-      "Bash(zip -r panneau-vivant.zip config.php functions.php index.php install.php README.md)"
+      "Bash(zip -r panneau-vivant.zip config.php functions.php index.php install.php README.md)",
+      "Bash(php -l index.php)",
+      "Bash(grep -E \"\\\\./core/|./modules/|^./index\\\\.php$|^./install\\\\.php$\")",
+      "Bash(xargs php -l)",
+      "Bash(unzip -l panneau-vivant.zip)",
+      "Bash(xargs -I{} php -l \"{}\")",
+      "Bash(cp -r /var/www/html/Sharehood/.claude/worktrees/agent-a3005717f3d2e9455/core /var/www/html/Sharehood/)",
+      "Bash(cp -r /var/www/html/Sharehood/.claude/worktrees/agent-a3005717f3d2e9455/modules /var/www/html/Sharehood/)"
     ]
   }
 }

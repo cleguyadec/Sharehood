@@ -14,12 +14,21 @@ header('X-Frame-Options: SAMEORIGIN');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/core/db.php';
+require_once __DIR__ . '/core/auth.php';
+require_once __DIR__ . '/core/helpers.php';
+require_once __DIR__ . '/core/settings.php';
+
+// Charger les modules pour runMigrations
+$modules = [];
+foreach (glob(__DIR__ . '/modules/*/module.php') as $moduleFile) {
+    $modules[] = require $moduleFile;
+}
 
 // Bloquer si déjà installé (utilisateurs existants)
 $dbExists = file_exists(DB_PATH);
+runMigrations($modules);
 if ($dbExists) {
-    initDB();
     $count = (int) getDB()->query('SELECT COUNT(*) FROM users')->fetchColumn();
     if ($count > 0) {
         http_response_code(403);
@@ -28,8 +37,6 @@ if ($dbExists) {
           Supprimez <code>install.php</code> du serveur pour des raisons de sécurité.
         </p>');
     }
-} else {
-    initDB();
 }
 
 // Créer data/.htaccess automatiquement si absent

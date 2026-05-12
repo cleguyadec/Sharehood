@@ -13,7 +13,7 @@ define('APP_SUBTITLE', "L'Étoile de Terre");
 define('DB_PATH', __DIR__ . '/data/panneau.sqlite');
 
 // Code d'invitation pour créer un compte (à changer après installation)
-define('INVITE_CODE', 'etoile2026');
+define('INVITE_CODE', 'etoile');
 
 // Durée de session en secondes (604800 = 7 jours)
 define('SESSION_LIFETIME', 604800);

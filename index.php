@@ -260,6 +260,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             break;
 
+        case 'admin_settings':
+            requireAdmin();
+            $name = trim($_POST['app_name'] ?? '');
+            $sub  = trim($_POST['app_subtitle'] ?? '');
+            if (!$name) {
+                flash('error', 'Le nom de l\'application est obligatoire.');
+            } else {
+                setSetting('app_name',     $name);
+                setSetting('app_subtitle', $sub);
+                flash('success', 'Identité mise à jour.');
+            }
+            redirect('?action=admin#identity');
+
         case 'admin_lib_cat_add':
             requireAdmin();
             $err = addLibCategory(
@@ -376,8 +389,8 @@ switch ($action) {
 
 function layoutOpen(string $title, ?array $user = null, string $currentAction = ''): void
 {
-    $appName = h(APP_NAME);
-    $appSub  = h(APP_SUBTITLE);
+    $appName = h(getSetting('app_name', APP_NAME));
+    $appSub  = h(getSetting('app_subtitle', APP_SUBTITLE));
     $isAdmin = $user && $user['role'] === 'admin';
     echo <<<HTML
 <!DOCTYPE html>
@@ -946,9 +959,10 @@ HTML;
 
 function layoutClose(): void
 {
+    $appName = h(getSetting('app_name', APP_NAME));
     echo <<<HTML
 <footer>
-  Le Panneau Vivant &nbsp;·&nbsp;
+  {$appName} &nbsp;·&nbsp;
   <a href="?action=privacy" style="color:inherit">Politique de confidentialité</a> &nbsp;·&nbsp;
   <a href="?action=my_data" style="color:inherit">Mes données</a>
 </footer>
@@ -965,8 +979,8 @@ function viewLogin(): void
     layoutOpen('Connexion');
     $err = flash('error');
     echo '<div class="auth-wrap">';
-    echo '<div><h1 style="font-family:\'Lora\',serif;font-size:1.8rem;text-align:center">🌿 Le Panneau Vivant</h1>';
-    echo '<p style="text-align:center;color:var(--muted);margin-top:.4rem">' . h(APP_SUBTITLE) . '</p></div>';
+    echo '<div><h1 style="font-family:\'Lora\',serif;font-size:1.8rem;text-align:center">🌿 ' . h(getSetting('app_name', APP_NAME)) . '</h1>';
+    echo '<p style="text-align:center;color:var(--muted);margin-top:.4rem">' . h(getSetting('app_subtitle', APP_SUBTITLE)) . '</p></div>';
     if ($err) {
         echo '<div class="alert alert-error">' . h($err) . '</div>';
     }
@@ -1009,8 +1023,8 @@ function viewRegister(): void
         echo '<div style="max-width:420px;margin:1rem auto"><div class="alert alert-error">' . h($err) . '</div></div>';
     }
     echo '<div class="auth-wrap">';
-    echo '<div><h1 style="font-family:\'Lora\',serif;font-size:1.8rem;text-align:center">🌿 Le Panneau Vivant</h1>';
-    echo '<p style="text-align:center;color:var(--muted);margin-top:.4rem">' . h(APP_SUBTITLE) . '</p></div>';
+    echo '<div><h1 style="font-family:\'Lora\',serif;font-size:1.8rem;text-align:center">🌿 ' . h(getSetting('app_name', APP_NAME)) . '</h1>';
+    echo '<p style="text-align:center;color:var(--muted);margin-top:.4rem">' . h(getSetting('app_subtitle', APP_SUBTITLE)) . '</p></div>';
     if ($err) {
         echo '<div class="alert alert-error" style="max-width:420px;width:100%">' . h($err) . '</div>';
     }
@@ -2443,8 +2457,8 @@ function viewForgotPassword(): void
     $ok  = flash('success');
 
     echo '<div class="auth-wrap">';
-    echo '<div><h1 style="font-family:\'Lora\',serif;font-size:1.8rem;text-align:center">🌿 ' . h(APP_NAME) . '</h1>';
-    echo '<p style="text-align:center;color:var(--muted);margin-top:.4rem">' . h(APP_SUBTITLE) . '</p></div>';
+    echo '<div><h1 style="font-family:\'Lora\',serif;font-size:1.8rem;text-align:center">🌿 ' . h(getSetting('app_name', APP_NAME)) . '</h1>';
+    echo '<p style="text-align:center;color:var(--muted);margin-top:.4rem">' . h(getSetting('app_subtitle', APP_SUBTITLE)) . '</p></div>';
 
     if ($err) echo '<div class="alert alert-error" style="max-width:420px;width:100%">'   . h($err) . '</div>';
     if ($ok)  echo '<div class="alert alert-success" style="max-width:420px;width:100%">' . h($ok)  . '</div>';
@@ -2480,8 +2494,8 @@ function viewResetPassword(string $token): void
     $err = flash('error');
 
     echo '<div class="auth-wrap">';
-    echo '<div><h1 style="font-family:\'Lora\',serif;font-size:1.8rem;text-align:center">🌿 ' . h(APP_NAME) . '</h1>';
-    echo '<p style="text-align:center;color:var(--muted);margin-top:.4rem">' . h(APP_SUBTITLE) . '</p></div>';
+    echo '<div><h1 style="font-family:\'Lora\',serif;font-size:1.8rem;text-align:center">🌿 ' . h(getSetting('app_name', APP_NAME)) . '</h1>';
+    echo '<p style="text-align:center;color:var(--muted);margin-top:.4rem">' . h(getSetting('app_subtitle', APP_SUBTITLE)) . '</p></div>';
 
     $valid = $token && validatePasswordResetToken($token);
 
@@ -2568,6 +2582,20 @@ function viewAdmin(array $user): void
         }
         echo '</tbody></table></div></div>';
     }
+
+    // ── Identité de l'application
+    echo '<div class="section-box" id="identity" style="margin-bottom:1.5rem">';
+    echo '<div class="section-box-header"><h2>🏷️ Identité de l\'application</h2>';
+    echo '<span class="text-sm text-muted">Nom et sous-titre affichés sur la page de connexion et dans l\'onglet navigateur</span></div>';
+    echo '<div style="padding:1rem">';
+    echo '<form method="post" action="?action=admin_settings" style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">';
+    echo csrfField();
+    echo '<div class="form-group" style="margin-bottom:0;flex:1;min-width:180px"><label style="font-size:.78rem;font-weight:600">Nom de l\'application *</label>';
+    echo '<input type="text" name="app_name" required maxlength="80" value="' . h(getSetting('app_name', APP_NAME)) . '" placeholder="ex : Sharehood" style="font-size:.9rem;padding:.45rem .7rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);width:100%"></div>';
+    echo '<div class="form-group" style="margin-bottom:0;flex:2;min-width:220px"><label style="font-size:.78rem;font-weight:600">Sous-titre / nom du groupe</label>';
+    echo '<input type="text" name="app_subtitle" maxlength="120" value="' . h(getSetting('app_subtitle', APP_SUBTITLE)) . '" placeholder="ex : L\'Étoile de Terre" style="font-size:.9rem;padding:.45rem .7rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);width:100%"></div>';
+    echo '<button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-end;padding:.5rem 1rem;white-space:nowrap">Enregistrer</button>';
+    echo '</form></div></div>';
 
     echo '<div class="section-box">';
     echo '<div class="section-box-header"><h2>Utilisateurs (' . count($users) . ')</h2></div>';
@@ -2740,8 +2768,9 @@ function viewAdmin(array $user): void
 function viewPrivacy(): void
 {
     layoutOpen('Politique de confidentialité');
-    $resp = h(RGPD_RESPONSABLE);
-    $mail = h(RGPD_CONTACT);
+    $resp    = h(RGPD_RESPONSABLE);
+    $mail    = h(RGPD_CONTACT);
+    $appName = h(getSetting('app_name', APP_NAME));
     echo <<<HTML
 <div class="page" style="max-width:760px;margin:0 auto">
   <div class="page-header">
@@ -2771,7 +2800,7 @@ function viewPrivacy(): void
 
       <div>
         <h2 style="font-family:'Lora',serif;font-size:1.05rem;margin-bottom:.5rem">3. Finalité et base légale</h2>
-        <p>Ces données sont utilisées uniquement pour faire fonctionner Le Panneau Vivant : identifier les membres, afficher les contributions, gérer les emprunts.<br>
+        <p>Ces données sont utilisées uniquement pour faire fonctionner {$appName} : identifier les membres, afficher les contributions, gérer les emprunts.<br>
         <strong>Base légale :</strong> votre consentement explicite (art. 6.1.a RGPD), donné lors de l'inscription.</p>
       </div>
 

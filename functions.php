@@ -157,6 +157,12 @@ function initDB(): void
             used_at    TEXT
         );
 
+        -- Paramètres de l'application
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        );
+
         -- Catégories de la prêt-o-thèque
         CREATE TABLE IF NOT EXISTS lib_categories (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -203,6 +209,10 @@ function initDB(): void
         );
     ");
 
+    // Peupler les settings par défaut si absents
+    $db->prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('app_name', ?)")->execute([APP_NAME]);
+    $db->prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('app_subtitle', ?)")->execute([APP_SUBTITLE]);
+
     // Peupler les catégories par défaut si la table est vide
     $count = (int) $db->query('SELECT COUNT(*) FROM lib_categories')->fetchColumn();
     if ($count === 0) {
@@ -237,6 +247,13 @@ function migrateDB(): void
     ] as $sql) {
         try { $db->exec($sql); } catch (\PDOException) { /* colonne déjà présente */ }
     }
+    // Settings (pour installations existantes)
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')");
+        $db->prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('app_name', ?)")->execute([APP_NAME]);
+        $db->prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('app_subtitle', ?)")->execute([APP_SUBTITLE]);
+    } catch (\PDOException) {}
+
     // Catégories prêt-o-thèque (pour installations existantes)
     try {
         $db->exec("CREATE TABLE IF NOT EXISTS lib_categories (
@@ -1371,6 +1388,23 @@ function getLibCat(string $slug): array
 {
     $cats = getLibCats();
     return $cats[$slug] ?? ($cats['autre'] ?? ['emoji' => '📦', 'label' => 'Autre']);
+}
+
+function getSetting(string $key, string $default = ''): string
+{
+    static $cache = [];
+    if (!isset($cache[$key])) {
+        $stmt = getDB()->prepare('SELECT value FROM settings WHERE key = ?');
+        $stmt->execute([$key]);
+        $row = $stmt->fetch();
+        $cache[$key] = $row !== false ? $row['value'] : $default;
+    }
+    return $cache[$key] ?: $default;
+}
+
+function setSetting(string $key, string $value): void
+{
+    getDB()->prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')->execute([$key, $value]);
 }
 
 function addLibCategory(string $slug, string $emoji, string $label): ?string
